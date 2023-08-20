@@ -1,5 +1,5 @@
 // Copyright 2020, Roberto De Ioris.
-
+//
 #pragma once
 
 #include "CoreMinimal.h"
