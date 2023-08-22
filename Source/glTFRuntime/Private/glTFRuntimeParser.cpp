@@ -266,14 +266,15 @@ TSharedPtr<FglTFRuntimeParser> FglTFRuntimeParser::FromData(const uint8* DataPtr
 	if (DataNum > 0 && DataNum <= INT32_MAX)
 	{
 		FString JsonData;
+		TMap<FString, FBinaryData> emptyData;
 		FFileHelper::BufferToString(JsonData, DataPtr, (int32)DataNum);
-		return FromString(JsonData, LoaderConfig, ZipFile);
+		return FromString(JsonData, LoaderConfig, emptyData, ZipFile);
 	}
 
 	return nullptr;
 }
 
-TSharedPtr<FglTFRuntimeParser> FglTFRuntimeParser::FromString(const FString& JsonData, const FglTFRuntimeConfig& LoaderConfig, TSharedPtr<FglTFRuntimeZipFile> InZipFile)
+TSharedPtr<FglTFRuntimeParser> FglTFRuntimeParser::FromString(const FString& JsonData, const FglTFRuntimeConfig& LoaderConfig, const TMap<FString, FBinaryData>& aux, TSharedPtr<FglTFRuntimeZipFile> InZipFile)
 {
 	SCOPED_NAMED_EVENT(FglTFRuntimeParser_FromString, FColor::Magenta);
 
@@ -306,6 +307,8 @@ TSharedPtr<FglTFRuntimeParser> FglTFRuntimeParser::FromString(const FString& Jso
 		}
 		Parser->DefaultPrefixForUnnamedNodes = LoaderConfig.PrefixForUnnamedNodes;
 		Parser->ZipFile = InZipFile;
+
+		Parser->AuxilliaryData = aux;
 	}
 
 	return Parser;
@@ -359,7 +362,8 @@ TSharedPtr<FglTFRuntimeParser> FglTFRuntimeParser::FromBinary(const uint8* DataP
 		return nullptr;
 	}
 
-	TSharedPtr<FglTFRuntimeParser> Parser = FromString(JsonData, LoaderConfig, InZipFile);
+	TMap<FString, FBinaryData> emptyData;
+	TSharedPtr<FglTFRuntimeParser> Parser = FromString(JsonData, LoaderConfig, emptyData, InZipFile);
 
 	if (Parser)
 	{
@@ -2969,6 +2973,12 @@ bool FglTFRuntimeParser::GetBuffer(const int32 Index, FglTFRuntimeBlob& Blob)
 			Blob.Num = BuffersCache[Index].Num();
 			return true;
 		}
+	}
+
+	// THIS IS WHERE I AUGHT TO INJECT TCP STUFF
+	if (AuxilliaryData.Num() != 0) {
+		UE_LOG(LogTemp, Log,
+			TEXT("AUX has been found."));
 	}
 
 	AddError("GetBuffer()", FString::Printf(TEXT("Unable to load buffer %d from Uri %s (you may want to enable external files loading...)"), Index, *Uri));

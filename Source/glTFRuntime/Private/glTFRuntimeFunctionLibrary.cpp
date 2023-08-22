@@ -87,7 +87,28 @@ UglTFRuntimeAsset* UglTFRuntimeFunctionLibrary::glTFLoadAssetFromString(const FS
 	Asset->RuntimeContextObject = LoaderConfig.RuntimeContextObject;
 	Asset->RuntimeContextString = LoaderConfig.RuntimeContextString;
 
-	if (!Asset->LoadFromString(JsonData, LoaderConfig))
+	TMap<FString, FBinaryData> emptyData;
+
+	if (!Asset->LoadFromString(JsonData, LoaderConfig, emptyData))
+	{
+		return nullptr;
+	}
+
+	return Asset;
+}
+
+UglTFRuntimeAsset* UglTFRuntimeFunctionLibrary::glTFLoadAssetFromStringPlusAuxData(const FString& JsonData, const FglTFRuntimeConfig& LoaderConfig, const TMap<FString, FBinaryData>& aux)
+{
+	UglTFRuntimeAsset* Asset = NewObject<UglTFRuntimeAsset>();
+	if (!Asset)
+	{
+		return nullptr;
+	}
+
+	Asset->RuntimeContextObject = LoaderConfig.RuntimeContextObject;
+	Asset->RuntimeContextString = LoaderConfig.RuntimeContextString;
+
+	if (!Asset->LoadFromString(JsonData, LoaderConfig, aux))
 	{
 		return nullptr;
 	}

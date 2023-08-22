@@ -64,7 +64,7 @@ bool UglTFRuntimeAsset::SetParser(TSharedRef<FglTFRuntimeParser> InParser)
 	return Parser != nullptr;
 }
 
-bool UglTFRuntimeAsset::LoadFromString(const FString& JsonData, const FglTFRuntimeConfig& LoaderConfig)
+bool UglTFRuntimeAsset::LoadFromString(const FString& JsonData, const FglTFRuntimeConfig& LoaderConfig, const TMap<FString, FBinaryData>& aux)
 {
 	// asset already loaded ?
 	if (Parser)
@@ -72,7 +72,7 @@ bool UglTFRuntimeAsset::LoadFromString(const FString& JsonData, const FglTFRunti
 		return false;
 	}
 
-	Parser = FglTFRuntimeParser::FromString(JsonData, LoaderConfig, nullptr);
+	Parser = FglTFRuntimeParser::FromString(JsonData, LoaderConfig, aux, nullptr);
 	if (Parser)
 	{
 		FScriptDelegate Delegate;

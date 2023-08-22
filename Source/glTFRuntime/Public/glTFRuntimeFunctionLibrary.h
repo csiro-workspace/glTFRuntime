@@ -25,6 +25,10 @@ public:
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "glTF Load Asset from String", AutoCreateRefTerm = "LoaderConfig"), Category = "glTFRuntime")
 	static UglTFRuntimeAsset* glTFLoadAssetFromString(const FString& JsonData, const FglTFRuntimeConfig& LoaderConfig);
 
+	// Not blueprint callable because TMap is not supported by blueprints :(
+	UFUNCTION(meta = (DisplayName = "glTF Load Asset from String + Aux Data", AutoCreateRefTerm = "LoaderConfig"), Category = "glTFRuntime")
+	static UglTFRuntimeAsset* glTFLoadAssetFromStringPlusAuxData(const FString& JsonData, const FglTFRuntimeConfig& LoaderConfig, const TMap<FString, FBinaryData>& aux);
+
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "glTF Load Asset from Url", AutoCreateRefTerm = "LoaderConfig, Headers"), Category = "glTFRuntime")
 	static void glTFLoadAssetFromUrl(const FString& Url, const TMap<FString, FString>& Headers, FglTFRuntimeHttpResponse Completed, const FglTFRuntimeConfig& LoaderConfig);
 
