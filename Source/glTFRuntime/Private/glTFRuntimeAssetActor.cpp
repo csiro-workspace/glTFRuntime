@@ -31,6 +31,9 @@ void AglTFRuntimeAssetActor::BeginPlay()
 {
 	Super::BeginPlay();
 
+
+	UE_LOG(LogTemp, Log, TEXT("Started AssetActor::BeginPlay()!"));
+
 	if (!Asset)
 	{
 		return;

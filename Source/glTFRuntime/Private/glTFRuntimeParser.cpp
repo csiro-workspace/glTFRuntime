@@ -2950,6 +2950,30 @@ bool FglTFRuntimeParser::GetBuffer(const int32 Index, FglTFRuntimeBlob& Blob)
 		return false;
 	}
 
+	// Data supplied via TCP has previously been placed in AuxilliaryData.
+	if (AuxilliaryData.Num() != 0) {
+		UE_LOG(LogTemp, Log, TEXT("Uri: (%s)"), *Uri);
+
+		if (FBinaryData* Data = AuxilliaryData.Find(Uri)) {
+			UE_LOG(LogTemp, Log,
+				TEXT("Uri has been found."));
+
+			// Note: Currently, Data->data is getting copied.
+			// Initialising data as TArray64 from the start would be better.
+			// (although there is very little documentation about TArray64)
+			// Alternatively, converting the allocator from uint32 to uint64?
+			// I'm not currently sure how that works.
+			TArray64<uint8> DataToAdd;
+			DataToAdd.Append(Data->data);
+			BuffersCache.Add(Index, DataToAdd); 
+			Blob.Data = BuffersCache[Index].GetData();
+			Blob.Num = BuffersCache[Index].Num();
+			return true;
+		}
+		UE_LOG(LogTemp, Log,
+			TEXT("Uri not found in AuxilliaryData."));
+	}
+
 	if (ZipFile)
 	{
 		TArray64<uint8> ZipData;
@@ -2973,12 +2997,6 @@ bool FglTFRuntimeParser::GetBuffer(const int32 Index, FglTFRuntimeBlob& Blob)
 			Blob.Num = BuffersCache[Index].Num();
 			return true;
 		}
-	}
-
-	// THIS IS WHERE I AUGHT TO INJECT TCP STUFF
-	if (AuxilliaryData.Num() != 0) {
-		UE_LOG(LogTemp, Log,
-			TEXT("AUX has been found."));
 	}
 
 	AddError("GetBuffer()", FString::Printf(TEXT("Unable to load buffer %d from Uri %s (you may want to enable external files loading...)"), Index, *Uri));
@@ -3859,8 +3877,29 @@ bool FglTFRuntimeParser::GetJsonObjectBytes(TSharedRef<FJsonObject> JsonObject, 
 		}
 		else
 		{
+
 			bool bFound = false;
-			if (ZipFile)
+			// Data supplied via TCP has previously been placed in AuxilliaryData.
+			if (AuxilliaryData.Num() != 0) {
+				UE_LOG(LogTemp, Log, TEXT("Uri: (%s)"), *Uri);
+
+				if (FBinaryData* Data = AuxilliaryData.Find(Uri)) {
+					UE_LOG(LogTemp, Log,
+						TEXT("Uri has been found."));
+
+					// Note: Currently, Data->data is getting copied.
+					// Initialising data as TArray64 from the start would be better.
+					// (although there is very little documentation about TArray64)
+					// Alternatively, converting the allocator from uint32 to uint64?
+					// I'm not currently sure how that works.
+					Bytes.Append(Data->data);
+					bFound = true;
+				}
+				UE_LOG(LogTemp, Log,
+					TEXT("Uri not found in AuxilliaryData."));
+			}
+
+			if (!bFound && ZipFile)
 			{
 				if (ZipFile->GetFileContent(Uri, Bytes))
 				{

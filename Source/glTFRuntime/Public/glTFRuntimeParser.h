@@ -44,8 +44,8 @@ USTRUCT()
 struct FBinaryData
 {
 	GENERATED_BODY()
-		UPROPERTY()
-		TArray<uint8> data;
+	UPROPERTY()
+	TArray<uint8> data;
 };
 
 /*
