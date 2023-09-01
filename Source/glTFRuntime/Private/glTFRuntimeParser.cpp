@@ -3887,16 +3887,13 @@ bool FglTFRuntimeParser::GetJsonObjectBytes(TSharedRef<FJsonObject> JsonObject, 
 					UE_LOG(LogTemp, Log,
 						TEXT("Uri has been found."));
 
-					// Note: Currently, Data->data is getting copied.
-					// Initialising data as TArray64 from the start would be better.
-					// (although there is very little documentation about TArray64)
-					// Alternatively, converting the allocator from uint32 to uint64?
-					// I'm not currently sure how that works.
 					Bytes.Append(Data->data);
 					bFound = true;
 				}
-				UE_LOG(LogTemp, Log,
-					TEXT("Uri not found in AuxilliaryData."));
+				else {
+					UE_LOG(LogTemp, Log,
+						TEXT("Uri not found in AuxilliaryData."));
+				}
 			}
 
 			if (!bFound && ZipFile)
