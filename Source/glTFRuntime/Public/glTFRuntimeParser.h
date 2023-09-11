@@ -4,6 +4,7 @@
 
 
 #include "CoreMinimal.h"
+#include "Runtime/Launch/Resources/Version.h"
 #include "Animation/AnimEnums.h"
 #include "Animation/Skeleton.h"
 #include "Async/Async.h"
@@ -75,7 +76,8 @@ enum class EglTFRuntimeTransformBaseType : uint8
 	BasisMatrix,
 	Identity,
 	LeftHanded,
-	IdentityXInverted
+	IdentityXInverted,
+	ForwardInverted
 };
 
 UENUM()
@@ -101,6 +103,22 @@ enum class EglTFRuntimeMorphTargetsDuplicateStrategy : uint8
 	Merge,
 	AppendMorphIndex,
 	AppendDuplicateCounter
+};
+
+UENUM()
+enum class EglTFRuntimePhysicsAssetAutoBodyCollisionType : uint8
+{
+	Capsule,
+	Sphere,
+	Box
+};
+
+UENUM()
+enum class EglTFRuntimeRecursiveMode : uint8
+{
+	Ignore,
+	Node,
+	Tree
 };
 
 USTRUCT(BlueprintType)
@@ -243,6 +261,11 @@ struct FglTFRuntimeConfig
 		if (TransformBaseType == EglTFRuntimeTransformBaseType::IdentityXInverted)
 		{
 			return FBasisVectorMatrix(FVector(-1, 0, 0), FVector(0, 1, 0), FVector(0, 0, 1), FVector::ZeroVector);
+		}
+
+		if (TransformBaseType == EglTFRuntimeTransformBaseType::ForwardInverted)
+		{
+			return FBasisVectorMatrix(FVector(0, 0, 1), FVector(-1, 0, 0), FVector(0, 1, 0), FVector::ZeroVector);
 		}
 
 		return DefaultMatrix;
@@ -695,7 +718,7 @@ struct FglTFRuntimeLightConfig
 	}
 };
 
-DECLARE_DYNAMIC_DELEGATE_RetVal_TwoParams(FString, FglTFRuntimeBoneRemapper, const int32, NodeIndex, const FString&, BoneName);
+DECLARE_DYNAMIC_DELEGATE_RetVal_ThreeParams(FString, FglTFRuntimeBoneRemapper, const int32, NodeIndex, const FString&, BoneName, UObject*, Context);
 
 USTRUCT(BlueprintType)
 struct FglTFRuntimeSkeletonBoneRemapperHook
@@ -773,6 +796,12 @@ struct FglTFRuntimeSkeletonConfig
 	int32 MaxNodesTreeDepth;
 
 	int32 CachedNodeIndex;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
+	bool bApplyUnmappedBonesTransforms;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
+	TMap<FString, FTransform> NodeBonesDeltaTransformMap;
 	
 	FglTFRuntimeSkeletonConfig()
 	{
@@ -789,6 +818,7 @@ struct FglTFRuntimeSkeletonConfig
 		bApplyParentNodesTransformsToRoot = false;
 		CachedNodeIndex = INDEX_NONE;
 		MaxNodesTreeDepth = -1;
+		bApplyUnmappedBonesTransforms = false;
 	}
 };
 
@@ -852,6 +882,12 @@ struct FglTFRuntimePhysicsConstraint
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
 	FVector ConstraintPos2;
+
+	FglTFRuntimePhysicsConstraint()
+	{
+		ConstraintPos1 = FVector::ZeroVector;
+		ConstraintPos2 = FVector::ZeroVector;
+	}
 };
 
 USTRUCT(BlueprintType)
@@ -884,7 +920,13 @@ struct FglTFRuntimePhysicsBody
 	bool bBoxAutoCollision;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
-	TArray<FglTFRuntimePhysicsConstraint> Constraints;
+	bool bCapsuleAutoCollision;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
+	float CollisionScale;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
+	bool bDisableCollision;
 
 	FglTFRuntimePhysicsBody()
 	{
@@ -893,7 +935,66 @@ struct FglTFRuntimePhysicsBody
 		bConsiderForBounds = true;
 		bSphereAutoCollision = false;
 		bBoxAutoCollision = false;
+		bCapsuleAutoCollision = false;
+		CollisionScale = 1.01;
+		bDisableCollision = false;
 	}
+};
+
+USTRUCT(BlueprintType)
+struct FglTFRuntimePhysicsAssetAutoBodyConfig
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
+	EglTFRuntimePhysicsAssetAutoBodyCollisionType CollisionType;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
+	float MinBoneSize;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
+	bool bDisableOverlappingCollisions;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
+	bool bDisableAllCollisions;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
+	TEnumAsByte<ECollisionTraceFlag> CollisionTraceFlag;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
+	TEnumAsByte<EPhysicsType> PhysicsType;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
+	bool bConsiderForBounds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
+	float CollisionScale;
+
+	FglTFRuntimePhysicsAssetAutoBodyConfig()
+	{
+		CollisionType = EglTFRuntimePhysicsAssetAutoBodyCollisionType::Capsule;
+		MinBoneSize = 20;
+		bDisableOverlappingCollisions = true;
+		bDisableAllCollisions = false;
+		CollisionTraceFlag = ECollisionTraceFlag::CTF_UseDefault;
+		PhysicsType = EPhysicsType::PhysType_Default;
+		bConsiderForBounds = true;
+		CollisionScale = 1.01;
+	}
+};
+
+DECLARE_DYNAMIC_DELEGATE_RetVal_ThreeParams(FBox, FglTFRuntimeBoneBoundsFilter, const FString&, BoneName, const FBox&, Box, UObject*, Context);
+
+USTRUCT(BlueprintType)
+struct FglTFRuntimeBoneBoundsFilterHook
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
+	FglTFRuntimeBoneBoundsFilter Filter;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
+	UObject* Context = nullptr;
 };
 
 USTRUCT(BlueprintType)
@@ -982,6 +1083,21 @@ struct FglTFRuntimeSkeletalMeshConfig
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
 	bool bReverseTangents;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
+	bool bAutoGeneratePhysicsAssetBodies;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
+	FglTFRuntimePhysicsAssetAutoBodyConfig PhysicsAssetAutoBodyConfig;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
+	bool bAutoGeneratePhysicsAssetConstraints;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
+	TArray<FglTFRuntimePhysicsConstraint> PhysicsConstraints;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "glTFRuntime")
+	FglTFRuntimeBoneBoundsFilterHook BoneBoundsFilter;
+
 	FglTFRuntimeSkeletalMeshConfig()
 	{
 		CacheMode = EglTFRuntimeCacheMode::ReadWrite;
@@ -1005,6 +1121,8 @@ struct FglTFRuntimeSkeletalMeshConfig
 		NormalsGenerationStrategy = EglTFRuntimeNormalsGenerationStrategy::IfMissing;
 		TangentsGenerationStrategy = EglTFRuntimeTangentsGenerationStrategy::IfMissing;
 		bReverseTangents = false;
+		bAutoGeneratePhysicsAssetBodies = false;
+		bAutoGeneratePhysicsAssetConstraints = false;
 	}
 };
 
@@ -1204,11 +1322,17 @@ struct FglTFRuntimePrimitive
 	int64 AdditionalBufferView;
 	int32 Mode;
 	bool bHasMaterial;
+	bool bHighPrecisionUVs;
+	bool bHighPrecisionWeights;
 
 	FglTFRuntimePrimitive()
 	{
 		AdditionalBufferView = INDEX_NONE;
 		bHasMaterial = false;
+		bHighPrecisionUVs = false;
+		bHighPrecisionWeights = false;
+		Material = nullptr;
+		Mode = 4;
 	}
 };
 
@@ -1226,7 +1350,7 @@ struct FglTFRuntimeSkeletalMeshContext : public FGCObject
 
 	FBox BoundingBox;
 
-	TMap<int32, FBox> PerBoneBoundingBox;
+	TMap<int32, FBox> PerBoneBoundingBoxCache;
 
 	// here we cache per-context LODs
 	TArray<FglTFRuntimeMeshLOD> CachedRuntimeMeshLODs;
@@ -1284,31 +1408,52 @@ struct FglTFRuntimeSkeletalMeshContext : public FGCObject
 		Collector.AddReferencedObject(SkeletalMesh);
 	}
 
-	int32 GetBoneIndex(const FString& BoneName) const
+	const FReferenceSkeleton& GetRefSkeleton() const
 	{
 #if ENGINE_MAJOR_VERSION > 4 || ENGINE_MINOR_VERSION > 26
-		return SkeletalMesh->GetRefSkeleton().FindBoneIndex(*BoneName);
+		return SkeletalMesh->GetRefSkeleton();
 #else
-		return SkeletalMesh->RefSkeleton.FindBoneIndex(*BoneName);
+		return SkeletalMesh->RefSkeleton;
 #endif
+	}
+
+	USkeleton* GetSkeleton() const
+	{
+#if ENGINE_MAJOR_VERSION > 4 || ENGINE_MINOR_VERSION > 26
+		return SkeletalMesh->GetSkeleton();
+#else
+		return SkeletalMesh->Skeleton;
+#endif
+	}
+
+	int32 GetBoneIndex(const FString& BoneName) const
+	{
+		return GetRefSkeleton().FindBoneIndex(*BoneName);
+	}
+
+	int32 GetBoneIndex(const FName& BoneName) const
+	{
+		return GetRefSkeleton().FindBoneIndex(BoneName);
+	}
+
+	int32 GetNumBones() const
+	{
+		return GetRefSkeleton().GetNum();
 	}
 
 	int32 GetBoneParentIndex(const int32 BoneIndex) const
 	{
-#if ENGINE_MAJOR_VERSION > 4 || ENGINE_MINOR_VERSION > 26
-		return SkeletalMesh->GetRefSkeleton().GetParentIndex(BoneIndex);
-#else
-		return SkeletalMesh->RefSkeleton.GetParentIndex(BoneIndex);
-#endif
+		return GetRefSkeleton().GetParentIndex(BoneIndex);
+	}
+
+	FName GetBoneName(const int32 BoneIndex) const
+	{
+		return GetRefSkeleton().GetBoneName(BoneIndex);
 	}
 
 	FTransform GetBoneLocalTransform(const int32 BoneIndex) const
 	{
-#if ENGINE_MAJOR_VERSION > 4 || ENGINE_MINOR_VERSION > 26
-		return SkeletalMesh->GetRefSkeleton().GetRefBonePose()[BoneIndex];
-#else
-		return SkeletalMesh->Skeleton->GetReferenceSkeleton().GetRefBonePose()[BoneIndex];
-#endif
+		return GetRefSkeleton().GetRefBonePose()[BoneIndex];
 	}
 
 	FTransform GetBoneWorldTransform(const int32 BoneIndex) const
@@ -1316,6 +1461,18 @@ struct FglTFRuntimeSkeletalMeshContext : public FGCObject
 		FTransform Transform = GetBoneLocalTransform(BoneIndex);
 		int32 ParentIndex = GetBoneParentIndex(BoneIndex);
 		while (ParentIndex > INDEX_NONE)
+		{
+			Transform *= GetBoneLocalTransform(ParentIndex);
+			ParentIndex = GetBoneParentIndex(ParentIndex);
+		}
+		return Transform;
+	}
+
+	FTransform GetBoneDeltaTransform(const int32 BoneIndex, const int32 InParentIndex) const
+	{
+		FTransform Transform = GetBoneLocalTransform(BoneIndex);
+		int32 ParentIndex = GetBoneParentIndex(BoneIndex);
+		while (ParentIndex > INDEX_NONE && ParentIndex != InParentIndex)
 		{
 			Transform *= GetBoneLocalTransform(ParentIndex);
 			ParentIndex = GetBoneParentIndex(ParentIndex);
@@ -1335,6 +1492,35 @@ struct FglTFRuntimeSkeletalMeshContext : public FGCObject
 		}
 		return ContextLODs[NewIndex];
 	}
+
+	bool BoneHasChildren(const int32 BoneIndex) const
+	{
+		const int32 NumBones = GetNumBones();
+		for (int32 CurrentBoneIndex = 0; CurrentBoneIndex < NumBones; CurrentBoneIndex++)
+		{
+			if (GetBoneParentIndex(CurrentBoneIndex) == BoneIndex)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool BoneIsChildOf(const int32 BoneIndex, const int32 BoneParentIndex) const
+	{
+		int32 ParentIndex = GetBoneParentIndex(BoneIndex);
+		while (ParentIndex > INDEX_NONE)
+		{
+			if (ParentIndex == BoneParentIndex)
+			{
+				return true;
+			}
+			ParentIndex = GetBoneParentIndex(ParentIndex);
+		}
+		return false;
+	}
+
+	const FBox& GetBoneBox(const int32 BoneIndex);
 };
 
 USTRUCT(BlueprintType)
@@ -1349,12 +1535,14 @@ struct FglTFRuntimeMeshLOD
 	bool bHasNormals;
 	bool bHasTangents;
 	bool bHasUV;
+	bool bHasVertexColors;
 
 	FglTFRuntimeMeshLOD()
 	{
 		bHasNormals = false;
 		bHasTangents = false;
 		bHasUV = false;
+		bHasVertexColors = false;
 	}
 };
 
@@ -1781,7 +1969,7 @@ public:
 	static FORCEINLINE TSharedPtr<FglTFRuntimeParser> FromData(const TArray64<uint8> Data, const FglTFRuntimeConfig& LoaderConfig) { return FromData(Data.GetData(), Data.Num(), LoaderConfig); }
 
 	bool LoadMeshAsRuntimeLOD(const int32 MeshIndex, FglTFRuntimeMeshLOD& RuntimeLOD, const FglTFRuntimeMaterialsConfig& MaterialsConfig);
-	bool LoadSkinnedMeshRecursiveAsRuntimeLOD(const FString& NodeName, int32& SkinIndex, const TArray<FString>& ExcludeNodes, FglTFRuntimeMeshLOD& RuntimeLOD, const FglTFRuntimeMaterialsConfig& MaterialsConfig, const FglTFRuntimeSkeletonConfig& SkeletonConfig);
+	bool LoadSkinnedMeshRecursiveAsRuntimeLOD(const FString& NodeName, int32& SkinIndex, const TArray<FString>& ExcludeNodes, FglTFRuntimeMeshLOD& RuntimeLOD, const FglTFRuntimeMaterialsConfig& MaterialsConfig, const FglTFRuntimeSkeletonConfig& SkeletonConfig, const EglTFRuntimeRecursiveMode TransformApplyRecursiveMode);
 
 	UStaticMesh* LoadStaticMeshFromRuntimeLODs(const TArray<FglTFRuntimeMeshLOD>& RuntimeLODs, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig);
 	void LoadStaticMeshFromRuntimeLODsAsync(const TArray<FglTFRuntimeMeshLOD>& RuntimeLODs, const FglTFRuntimeStaticMeshAsync& AsyncCallback, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig);
@@ -1826,8 +2014,8 @@ public:
 
 	USkeletalMesh* LoadSkeletalMeshLODs(const TArray<int32>& MeshIndices, const int32 SkinIndex, const FglTFRuntimeSkeletalMeshConfig& SkeletalMeshConfig);
 
-	USkeletalMesh* LoadSkeletalMeshRecursive(const FString& NodeName, const int32 SkinIndex, const TArray<FString>& ExcludeNodes, const FglTFRuntimeSkeletalMeshConfig& SkeletalMeshConfig);
-	void LoadSkeletalMeshRecursiveAsync(const FString& NodeName, const int32 SkinIndex, const TArray<FString>& ExcludeNodes, const FglTFRuntimeSkeletalMeshAsync& AsyncCallback, const FglTFRuntimeSkeletalMeshConfig& SkeletalMeshConfig);
+	USkeletalMesh* LoadSkeletalMeshRecursive(const FString& NodeName, const int32 SkinIndex, const TArray<FString>& ExcludeNodes, const FglTFRuntimeSkeletalMeshConfig& SkeletalMeshConfig, const EglTFRuntimeRecursiveMode TransformApplyRecursiveMode);
+	void LoadSkeletalMeshRecursiveAsync(const FString& NodeName, const int32 SkinIndex, const TArray<FString>& ExcludeNodes, const FglTFRuntimeSkeletalMeshAsync& AsyncCallback, const FglTFRuntimeSkeletalMeshConfig& SkeletalMeshConfig, const EglTFRuntimeRecursiveMode TransformApplyRecursiveMode);
 
 	UglTFRuntimeAnimationCurve* LoadNodeAnimationCurve(const int32 NodeIndex);
 	TArray<UglTFRuntimeAnimationCurve*> LoadAllNodeAnimationCurves(const int32 NodeIndex);
@@ -2069,6 +2257,8 @@ protected:
 	int32 FindTopRoot(int32 NodeIndex);
 	bool HasRoot(int32 NodeIndex, int32 RootIndex);
 
+	void GeneratePhysicsAsset_Internal(FglTFRuntimeSkeletalMeshContextRef SkeletalMeshContext);
+
 public:
 	UMaterialInterface* BuildMaterial(const int32 Index, const FString& MaterialName, const FglTFRuntimeMaterial& RuntimeMaterial, const FglTFRuntimeMaterialsConfig& MaterialsConfig, const bool bUseVertexColors);
 	UMaterialInterface* BuildVertexColorOnlyMaterial(const FglTFRuntimeMaterialsConfig& MaterialsConfig);
@@ -2145,7 +2335,7 @@ public:
 	}
 
 	template<typename T, typename Callback>
-	bool BuildFromAccessorField(TSharedRef<FJsonObject> JsonObject, const FString& Name, TArray<T>& Data, const TArray<int64>& SupportedElements, const TArray<int64>& SupportedTypes, Callback Filter, const int64 AdditionalBufferView, const bool bDefaultNormalized)
+	bool BuildFromAccessorField(TSharedRef<FJsonObject> JsonObject, const FString& Name, TArray<T>& Data, const TArray<int64>& SupportedElements, const TArray<int64>& SupportedTypes, Callback Filter, const int64 AdditionalBufferView, const bool bDefaultNormalized, int64* ComponentTypePtr)
 	{
 		int64 AccessorIndex;
 		if (!JsonObject->TryGetNumberField(Name, AccessorIndex))
@@ -2170,6 +2360,11 @@ public:
 		if (!SupportedTypes.Contains(ComponentType))
 		{
 			return false;
+		}
+
+		if (ComponentTypePtr)
+		{
+			*ComponentTypePtr = ComponentType;
 		}
 
 		Data.AddUninitialized(Count);
@@ -2236,7 +2431,7 @@ public:
 	}
 
 	template<typename T, typename Callback>
-	bool BuildFromAccessorField(TSharedRef<FJsonObject> JsonObject, const FString& Name, TArray<T>& Data, const TArray<int64>& SupportedTypes, Callback Filter, const int64 AdditionalBufferView, const bool bDefaultNormalized)
+	bool BuildFromAccessorField(TSharedRef<FJsonObject> JsonObject, const FString& Name, TArray<T>& Data, const TArray<int64>& SupportedTypes, Callback Filter, const int64 AdditionalBufferView, const bool bDefaultNormalized, int64* ComponentTypePtr)
 	{
 		int64 AccessorIndex;
 		if (!JsonObject->TryGetNumberField(Name, AccessorIndex))
@@ -2261,6 +2456,11 @@ public:
 		if (!SupportedTypes.Contains(ComponentType))
 		{
 			return false;
+		}
+
+		if (ComponentTypePtr)
+		{
+			*ComponentTypePtr = ComponentType;
 		}
 
 		Data.AddUninitialized(Count);
@@ -2311,15 +2511,15 @@ public:
 	}
 
 	template<typename T>
-	bool BuildFromAccessorField(TSharedRef<FJsonObject> JsonObject, const FString& Name, TArray<T>& Data, const TArray<int64>& SupportedElements, const TArray<int64>& SupportedTypes, const int64 AdditionalBufferView, const bool bDefaultNormalized)
+	bool BuildFromAccessorField(TSharedRef<FJsonObject> JsonObject, const FString& Name, TArray<T>& Data, const TArray<int64>& SupportedElements, const TArray<int64>& SupportedTypes, const int64 AdditionalBufferView, const bool bDefaultNormalized, int64* ComponentTypePtr)
 	{
-		return BuildFromAccessorField(JsonObject, Name, Data, SupportedElements, SupportedTypes, [&](T InValue) -> T {return InValue; }, AdditionalBufferView, bDefaultNormalized);
+		return BuildFromAccessorField(JsonObject, Name, Data, SupportedElements, SupportedTypes, [&](T InValue) -> T {return InValue; }, AdditionalBufferView, bDefaultNormalized, ComponentTypePtr);
 	}
 
 	template<typename T>
-	bool BuildFromAccessorField(TSharedRef<FJsonObject> JsonObject, const FString& Name, TArray<T>& Data, const TArray<int64>& SupportedTypes, const int64 AdditionalBufferView, const bool bDefaultNormalized)
+	bool BuildFromAccessorField(TSharedRef<FJsonObject> JsonObject, const FString& Name, TArray<T>& Data, const TArray<int64>& SupportedTypes, const int64 AdditionalBufferView, const bool bDefaultNormalized, int64* ComponentTypePtr)
 	{
-		return BuildFromAccessorField(JsonObject, Name, Data, SupportedTypes, [&](T InValue) -> T {return InValue; }, AdditionalBufferView, bDefaultNormalized);
+		return BuildFromAccessorField(JsonObject, Name, Data, SupportedTypes, [&](T InValue) -> T {return InValue; }, AdditionalBufferView, bDefaultNormalized, ComponentTypePtr);
 	}
 
 	template<int32 Num, typename T>
@@ -2370,6 +2570,8 @@ protected:
 
 	FString DefaultPrefixForUnnamedNodes;
 
+	float DownloadTime;
+
 public:
 	bool IsArchive() const;
 	TArray<FString> GetArchiveItems() const;
@@ -2400,5 +2602,8 @@ public:
 
 	bool LoadBlobToMips(const int32 TextureIndex, TSharedRef<FJsonObject> JsonTextureObject, TSharedRef<FJsonObject> JsonImageObject, const TArray64<uint8>& Blob, TArray<FglTFRuntimeMipMap>& Mips, const bool sRGB, const FglTFRuntimeMaterialsConfig& MaterialsConfig);
 	bool LoadBlobToMips(const TArray64<uint8>& Blob, TArray<FglTFRuntimeMipMap>& Mips, const bool sRGB, const FglTFRuntimeMaterialsConfig& MaterialsConfig);
+
+	void SetDownloadTime(const float Value);
+	float GetDownloadTime() const;
 
 };

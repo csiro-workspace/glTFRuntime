@@ -1,4 +1,4 @@
-// Copyright 2020, Roberto De Ioris.
+// Copyright 2020-2023, Roberto De Ioris.
 
 
 #include "glTFRuntimeAssetActor.h"
@@ -7,6 +7,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/StaticMeshSocket.h"
 #include "Animation/AnimSequence.h"
+#include "glTFRuntimeSkeletalMeshComponent.h"
 
 // Sets default values
 AglTFRuntimeAssetActor::AglTFRuntimeAssetActor()
@@ -91,6 +92,9 @@ void AglTFRuntimeAssetActor::BeginPlay()
 
 void AglTFRuntimeAssetActor::ProcessNode(USceneComponent* NodeParentComponent, const FName SocketName, FglTFRuntimeNode& Node)
 {
+
+	UE_LOG(LogTemp, Log, TEXT("%s\n"), *Node.Name);
+
 	// special case for bones/joints
 	if (Asset->NodeIsBone(Node.Index))
 	{
@@ -229,7 +233,17 @@ void AglTFRuntimeAssetActor::ProcessNode(USceneComponent* NodeParentComponent, c
 		}
 		else
 		{
-			USkeletalMeshComponent* SkeletalMeshComponent = NewObject<USkeletalMeshComponent>(this, GetSafeNodeName<USkeletalMeshComponent>(Node));
+			USkeletalMeshComponent* SkeletalMeshComponent = nullptr;
+			if (!SkeletalMeshConfig.bPerPolyCollision)
+			{
+				SkeletalMeshComponent = NewObject<USkeletalMeshComponent>(this, GetSafeNodeName<USkeletalMeshComponent>(Node));
+			}
+			else
+			{
+				SkeletalMeshComponent = NewObject<UglTFRuntimeSkeletalMeshComponent>(this, GetSafeNodeName<UglTFRuntimeSkeletalMeshComponent>(Node));
+				SkeletalMeshComponent->bEnablePerPolyCollision = true;
+				SkeletalMeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			}
 			if (!NodeParentComponent)
 			{
 				SetRootComponent(SkeletalMeshComponent);
@@ -350,8 +364,8 @@ void AglTFRuntimeAssetActor::ProcessNode(USceneComponent* NodeParentComponent, c
 				SkeletalMeshComponent->AnimationData.bSavedPlaying = true;
 				SkeletalMeshComponent->SetAnimationMode(EAnimationMode::AnimationSingleNode);
 			}
-		}
 	}
+}
 
 	OnNodeProcessed.Broadcast(Node, NewComponent);
 
