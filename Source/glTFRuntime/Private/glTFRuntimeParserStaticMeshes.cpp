@@ -12,6 +12,12 @@
 #include "PhysicsEngine/BodySetup.h"
 #include "Runtime/Launch/Resources/Version.h"
 #include "StaticMeshResources.h"
+#include "NiagaraFunctionLibrary.h"
+
+#define MODE_POINTS 0
+#define MODE_LINES 1
+#define MODE_TRIANGLES 4
+
 
 FglTFRuntimeStaticMeshContext::FglTFRuntimeStaticMeshContext(TSharedRef<FglTFRuntimeParser> InParser, const FglTFRuntimeStaticMeshConfig& InStaticMeshConfig) :
 	Parser(InParser),
@@ -135,6 +141,8 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 
 		for (const FglTFRuntimePrimitive& Primitive : LOD->Primitives)
 		{
+
+
 			if (Primitive.UVs.Num() > NumUVs)
 			{
 				NumUVs = Primitive.UVs.Num();
@@ -164,14 +172,27 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 
 		for (const FglTFRuntimePrimitive& Primitive : LOD->Primitives)
 		{
+
+			if (Primitive.Mode != MODE_TRIANGLES) {
+				// This means the geometry is either lines or pointcloud.
+				// Boy oh boy wowwiee. - BT
+				// Just chuck a breakpoint here for fun
+				UE_LOG(LogTemp, Log, TEXT("Mode %d"), Primitive.Mode);
+			}
+
 			FName MaterialName = FName(FString::Printf(TEXT("LOD_%d_Section_%d_%s"), CurrentLODIndex, StaticMeshContext->StaticMaterials.Num(), *Primitive.MaterialName));
 			FStaticMaterial StaticMaterial(Primitive.Material, MaterialName);
 			StaticMaterial.UVChannelData.bInitialized = true;
 
+			if (Primitive.Mode == MODE_LINES) {
+				// Create Niagara beam with that material.
+				UNiagaraFunctionLibrary::SpawnSystemAtLocation();
+			}
+
 			FStaticMeshSection& Section = Sections.AddDefaulted_GetRef();
 			int32 NumVertexInstancesPerSection = Primitive.Indices.Num();
 
-			Section.NumTriangles = NumVertexInstancesPerSection / 3;
+			Section.NumTriangles = NumVertexInstancesPerSection / 3; // Will need to change if dealing with lines or points
 			Section.FirstIndex = VertexInstanceBaseIndex;
 			Section.bEnableCollision = true;
 			Section.bCastShadow = true;
@@ -885,7 +906,7 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMeshLODs(const TArray<int32>& MeshInd
 		StaticMeshContext->LODs.Add(LOD);
 	}
 
-	UStaticMesh* StaticMesh = LoadStaticMesh_Internal(StaticMeshContext);
+ 	UStaticMesh* StaticMesh = LoadStaticMesh_Internal(StaticMeshContext);
 	if (StaticMesh)
 	{
 		return FinalizeStaticMesh(StaticMeshContext);

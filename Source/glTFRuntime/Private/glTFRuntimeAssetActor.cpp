@@ -89,6 +89,9 @@ void AglTFRuntimeAssetActor::BeginPlay()
 
 void AglTFRuntimeAssetActor::ProcessNode(USceneComponent* NodeParentComponent, const FName SocketName, FglTFRuntimeNode& Node)
 {
+
+	UE_LOG(LogTemp, Log, TEXT("%s\n"), *Node.Name);
+
 	// special case for bones/joints
 	if (Asset->NodeIsBone(Node.Index))
 	{

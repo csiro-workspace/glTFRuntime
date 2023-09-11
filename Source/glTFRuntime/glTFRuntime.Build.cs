@@ -44,7 +44,8 @@ public class glTFRuntime : ModuleRules
                 "Projects",
                 "MeshDescription",
                 "StaticMeshDescription",
-                "AudioExtensions"
+                "AudioExtensions",
+                "Niagara"
             }
             );
 
