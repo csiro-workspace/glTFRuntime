@@ -17,6 +17,7 @@ public class glTFRuntime : ModuleRules
 
         PrivateIncludePaths.AddRange(
             new string[] {
+                "Niagara"
             }
             );
 
@@ -28,6 +29,8 @@ public class glTFRuntime : ModuleRules
                 "ProceduralMeshComponent",
             }
             );
+
+
 
 
         PrivateDependencyModuleNames.AddRange(
@@ -48,6 +51,7 @@ public class glTFRuntime : ModuleRules
                 "Niagara"
             }
             );
+
 
         if (Target.Type == TargetType.Editor)
         {

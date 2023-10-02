@@ -174,9 +174,13 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 		for (const FglTFRuntimePrimitive& Primitive : LOD->Primitives)
 		{
 
+
+			bool bMissingNormals = false;
+			bool bMissingTangents = false;
+			bool bMissingIgnore = false;
+
 			if (Primitive.Mode != MODE_TRIANGLES) {
 				// This means the geometry is either lines or pointcloud.
-				// Boy oh boy wowwiee. - BT
 				// Just chuck a breakpoint here for fun
 				UE_LOG(LogTemp, Log, TEXT("Mode %d"), Primitive.Mode);
 			}
@@ -185,29 +189,36 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 			FStaticMaterial StaticMaterial(Primitive.Material, MaterialName);
 			StaticMaterial.UVChannelData.bInitialized = true;
 
+			FStaticMeshSection& Section = Sections.AddDefaulted_GetRef();
+			int32 NumVertexInstancesPerSection = Primitive.Indices.Num();
+
 			if (Primitive.Mode == MODE_LINES) {
 				// Create Niagara beam with that material.
-				UNiagaraSystem* NS = LoadObject<UNiagaraSystem>(nullptr, TEXT("/Content/P_Line_glTFRuntime.uasset"), nullptr, LOAD_None, nullptr);
+				UNiagaraSystem* NS = LoadObject<UNiagaraSystem>(nullptr, TEXT("/glTFRuntime/P_Line_glTFRuntime"), nullptr, LOAD_None, nullptr);
 
 				if (NS) {
-					UE_LOG(LogTemp, Log, "Successfully created NiagaraSystem with Line.");
+					UE_LOG(LogTemp, Log, TEXT("Successfully created NiagaraSystem with Line."));
 
-					// Spawn beam for each line.
+					// Spawn beam between start and end of each line.
 					for (int32 LineIndex = 0; LineIndex < NumVertexInstancesPerSection / 2; LineIndex++) {
 						int32 VertexIndexStart = Primitive.Indices[LineIndex * 2];
-						FVector3f PositionStart = FVector3f(GetSafeValue(Primitive.Positions, VertexIndexStart, FVector::ZeroVector, bMissingIgnore));
+						FVector PositionStart = FVector(GetSafeValue(Primitive.Positions, VertexIndexStart, FVector::ZeroVector, bMissingIgnore));
+						
 						int32 VertexIndexEnd = Primitive.Indices[LineIndex * 2 + 1];
-						FVector3f PositionEnd = FVector3f(GetSafeValue(Primitive.Positions, VertexIndexEnd, FVector::ZeroVector, bMissingIgnore));
+						FVector PositionEnd = FVector(GetSafeValue(Primitive.Positions, VertexIndexEnd, FVector::ZeroVector, bMissingIgnore));
 
-						FVector3f Diff = PositionEnd - PositionStart;
+						FVector Diff = PositionEnd - PositionStart;
+						FVector UnitDiff = FVector(Diff);
+						UnitDiff.Normalize(0.00001f);
 
-						FVector3f Length = Scale(Diff);
-						FVector3f Rotation = someSinsAndCosinesHopefullyAFunctionAlreadyExists(Unit(Diff));
-
-						UNiagaraComponent* Beam = UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), NS, PositionStart, Rotation, Length, true, true, ENCPoolMethod::AutoRelease, true);
+						FRotator Rotation = FRotator(FQuat::FindBetweenNormals(FVector3d(1.0, 0.0, 0.0), UnitDiff));
+						UNiagaraComponent* Beam = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+							StaticMesh->GetWorld(), NS, PositionStart, Rotation, FVector::One(), true, true, ENCPoolMethod::AutoRelease, true);
+						
+						// Set length
+						Beam->SetVariableFloat("Length", Diff.Length());
 
 						// Set colour
-						// TODO: Give material to beam as input. Or maybe just colour? We'll see.
 						FLinearColor StartColor = FLinearColor(Primitive.Colors[LineIndex * 2]).ToFColor(true);
 						FLinearColor EndColor = FLinearColor(Primitive.Colors[LineIndex * 2 + 1]).ToFColor(true);
 						Beam->SetVariableLinearColor("StartColor", StartColor);
@@ -215,32 +226,32 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 					}
 				}
 				else {
-					UE_LOG(LogTemp, Log, "Failed to create NiagaraSystem with Line. :(");
+					UE_LOG(LogTemp, Log, TEXT("Failed to create NiagaraSystem with Line. :("));
 				}
+
+				return StaticMesh;
 			}
 
 			if (Primitive.Mode == MODE_POINTS) {
 				UNiagaraSystem* NS = LoadObject<UNiagaraSystem>(nullptr, TEXT("SOME THEORETICAL PARTICAL SYSTEM"), nullptr, LOAD_None, nullptr);
 
-
 				if (NS) {
-					UE_LOG(LogTemp, Log, "Successfully created NiagaraSystem with Line.");
+					UE_LOG(LogTemp, Log, TEXT("Successfully created NiagaraSystem with Points."));
 
 					// Spawn beam for each line.
 					for (int32 LineIndex = 0; LineIndex < NumVertexInstancesPerSection; LineIndex++) {
 						int32 VertexIndexStart = Primitive.Indices[LineIndex];
-						FVector3f Position = FVector3f(GetSafeValue(Primitive.Positions, VertexIndexStart, FVector::ZeroVector, bMissingIgnore));
+						FVector Position = FVector(GetSafeValue(Primitive.Positions, VertexIndexStart, FVector::ZeroVector, bMissingIgnore));
 
-						UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), NS, PositionStart, Rotation, Length, true, true, ENCPoolMethod::AutoRelease, true);
+						// UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), NS, PositionStart, Rotation, Length, true, true, ENCPoolMethod::AutoRelease, true);
 					}
 				}
 				else {
-					UE_LOG(LogTemp, Log, "Failed to create NiagaraSystem with Line. :(");
+					UE_LOG(LogTemp, Log, TEXT("Failed to create NiagaraSystem with Points. :("));
 				}
-			}
 
-			FStaticMeshSection& Section = Sections.AddDefaulted_GetRef();
-			int32 NumVertexInstancesPerSection = Primitive.Indices.Num();
+				return StaticMesh;
+			}
 
 			Section.NumTriangles = NumVertexInstancesPerSection / 3; // Will need to change if dealing with lines or points
 			Section.FirstIndex = VertexInstanceBaseIndex;
@@ -280,10 +291,6 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 			MeshSectionInfo.MaterialIndex = MaterialIndex;
 			SectionInfoMap.Set(CurrentLODIndex, SectionIndex, MeshSectionInfo);
 #endif
-
-			bool bMissingNormals = false;
-			bool bMissingTangents = false;
-			bool bMissingIgnore = false;
 
 			LODIndices.AddUninitialized(NumVertexInstancesPerSection);
 
