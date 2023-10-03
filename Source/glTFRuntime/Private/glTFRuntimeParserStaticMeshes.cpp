@@ -13,6 +13,7 @@
 #include "Runtime/Launch/Resources/Version.h"
 #include "StaticMeshResources.h"
 #include "NiagaraFunctionLibrary.h"
+#include "NiagaraDataInterfaceArrayFunctionLibrary.h"
 #include "NiagaraComponent.h"
 
 #define MODE_POINTS 0
@@ -196,6 +197,10 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 				// Create Niagara beam with that material.
 				UNiagaraSystem* NS = LoadObject<UNiagaraSystem>(nullptr, TEXT("/glTFRuntime/P_Line_glTFRuntime"), nullptr, LOAD_None, nullptr);
 
+				if (bApplyAdditionalTransforms) {
+					UE_LOG(LogTemp, Log, TEXT("Additional transforms wanted for line."));
+				}
+
 				if (NS) {
 					UE_LOG(LogTemp, Log, TEXT("Successfully created NiagaraSystem with Line."));
 
@@ -233,18 +238,46 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 			}
 
 			if (Primitive.Mode == MODE_POINTS) {
-				UNiagaraSystem* NS = LoadObject<UNiagaraSystem>(nullptr, TEXT("SOME THEORETICAL PARTICAL SYSTEM"), nullptr, LOAD_None, nullptr);
+				UNiagaraSystem* NS = LoadObject<UNiagaraSystem>(nullptr, TEXT("/glTFRuntime/P_Point_glTFRuntime"), nullptr, LOAD_None, nullptr);
+
+
+				if (bApplyAdditionalTransforms) {
+					UE_LOG(LogTemp, Log, TEXT("Additional transforms wanted for points."));
+				}
 
 				if (NS) {
 					UE_LOG(LogTemp, Log, TEXT("Successfully created NiagaraSystem with Points."));
 
-					// Spawn beam for each line.
-					for (int32 LineIndex = 0; LineIndex < NumVertexInstancesPerSection; LineIndex++) {
-						int32 VertexIndexStart = Primitive.Indices[LineIndex];
-						FVector Position = FVector(GetSafeValue(Primitive.Positions, VertexIndexStart, FVector::ZeroVector, bMissingIgnore));
+					TArray<FVector> Positions;
+					Positions.Init(FVector::ZeroVector, NumVertexInstancesPerSection);
+					TArray<FLinearColor> Colors;
+					Colors.Init(FLinearColor::Green, NumVertexInstancesPerSection);
 
-						// UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), NS, PositionStart, Rotation, Length, true, true, ENCPoolMethod::AutoRelease, true);
+					// Spawn particle for each point.
+					// NOTE: Glyphers are not yet supported.
+
+					// Collect points.
+					for (int32 PointIndex = 0; PointIndex < NumVertexInstancesPerSection; PointIndex++) {
+						int32 VertexIndexStart = Primitive.Indices[PointIndex];
+						Positions[PointIndex] = FVector(GetSafeValue(Primitive.Positions, VertexIndexStart, FVector::ZeroVector, bMissingIgnore));
+						//Colors[PointIndex] = FLinearColor(Primitive.Colors[PointIndex]).ToFColor(true);
 					}
+
+
+					UNiagaraComponent* PointCloud = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+						StaticMesh->GetWorld(), NS, FVector::Zero(), FRotator(0,0,0), FVector::One(), true, true, ENCPoolMethod::AutoRelease, true);
+
+					PointCloud->SetVariableInt("Count", NumVertexInstancesPerSection);
+					UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(
+						PointCloud, "Positions", Positions);
+					//UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayColor(
+					//	PointCloud, "Colors", Colors);
+
+					// UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), NS, PositionStart, Rotation, Length, true, true, ENCPoolMethod::AutoRelease, true);
+						// Add array of vectors as a value
+						// Place each particle at a position in that array
+						// Each particle is an instance of a static mesh(?)
+						// Each particle has a colour associated
 				}
 				else {
 					UE_LOG(LogTemp, Log, TEXT("Failed to create NiagaraSystem with Points. :("));
@@ -345,6 +378,7 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 
 				if (bApplyAdditionalTransforms)
 				{
+					UE_LOG(LogTemp, Log, TEXT("Additional transforms wanted for triangles."));
 #if ENGINE_MAJOR_VERSION > 4
 					StaticMeshVertex.Position = FVector3f(LOD->AdditionalTransforms[AdditionalTransformsPrimitiveIndex].TransformPosition(FVector3d(StaticMeshVertex.Position)));
 					StaticMeshVertex.TangentX = FVector3f(LOD->AdditionalTransforms[AdditionalTransformsPrimitiveIndex].TransformVectorNoScale(FVector3d(StaticMeshVertex.TangentX)));
