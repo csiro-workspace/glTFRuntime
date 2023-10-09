@@ -3051,13 +3051,10 @@ bool FglTFRuntimeParser::GetBuffer(const int32 Index, FglTFRuntimeBlob& Blob)
 	}
 
 	// Data supplied via TCP has previously been placed in AuxilliaryData.
-	if (AuxilliaryData.Num() != 0) {
-		UE_LOG(LogTemp, Log, TEXT("Uri: (%s)"), *Uri);
-
-		if (FBinaryData* Data = AuxilliaryData.Find(Uri)) {
-			UE_LOG(LogTemp, Log,
-				TEXT("Uri has been found."));
-
+	if (AuxilliaryData.Num() != 0) 
+	{
+		if (FBinaryData* Data = AuxilliaryData.Find(Uri)) 
+		{
 			// Note: Currently, Data->data is getting copied.
 			// Initialising data as TArray64 from the start would be better.
 			// (although there is very little documentation about TArray64)

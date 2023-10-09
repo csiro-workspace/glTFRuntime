@@ -143,8 +143,6 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 
 		for (const FglTFRuntimePrimitive& Primitive : LOD->Primitives)
 		{
-
-
 			if (Primitive.UVs.Num() > NumUVs)
 			{
 				NumUVs = Primitive.UVs.Num();
@@ -180,12 +178,6 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 			bool bMissingTangents = false;
 			bool bMissingIgnore = false;
 
-			if (Primitive.Mode != MODE_TRIANGLES) {
-				// This means the geometry is either lines or pointcloud.
-				// Just chuck a breakpoint here for fun
-				UE_LOG(LogTemp, Log, TEXT("Mode %d"), Primitive.Mode);
-			}
-
 			FName MaterialName = FName(FString::Printf(TEXT("LOD_%d_Section_%d_%s"), CurrentLODIndex, StaticMeshContext->StaticMaterials.Num(), *Primitive.MaterialName));
 			FStaticMaterial StaticMaterial(Primitive.Material, MaterialName);
 			StaticMaterial.UVChannelData.bInitialized = true;
@@ -193,19 +185,16 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 			FStaticMeshSection& Section = Sections.AddDefaulted_GetRef();
 			int32 NumVertexInstancesPerSection = Primitive.Indices.Num();
 
-			if (Primitive.Mode == MODE_LINES) {
+			if (Primitive.Mode == MODE_LINES) 
+			{
 				// Create Niagara beam with that material.
 				UNiagaraSystem* NS = LoadObject<UNiagaraSystem>(nullptr, TEXT("/glTFRuntime/P_Line_glTFRuntime"), nullptr, LOAD_None, nullptr);
 
-				if (bApplyAdditionalTransforms) {
-					UE_LOG(LogTemp, Log, TEXT("Additional transforms wanted for line."));
-				}
-
-				if (NS) {
-					UE_LOG(LogTemp, Log, TEXT("Successfully created NiagaraSystem with Line."));
-
+				if (NS) 
+				{
 					// Spawn beam between start and end of each line.
-					for (int32 LineIndex = 0; LineIndex < NumVertexInstancesPerSection / 2; LineIndex++) {
+					for (int32 LineIndex = 0; LineIndex < NumVertexInstancesPerSection / 2; LineIndex++) 
+					{
 						int32 VertexIndexStart = Primitive.Indices[LineIndex * 2];
 						FVector PositionStart = FVector(GetSafeValue(Primitive.Positions, VertexIndexStart, FVector::ZeroVector, bMissingIgnore));
 						
@@ -224,30 +213,40 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 						Beam->SetVariableFloat("Length", Diff.Length());
 
 						// Set colour
-						FLinearColor StartColor = FLinearColor(Primitive.Colors[LineIndex * 2]).ToFColor(true);
-						FLinearColor EndColor = FLinearColor(Primitive.Colors[LineIndex * 2 + 1]).ToFColor(true);
-						Beam->SetVariableLinearColor("StartColor", StartColor);
-						Beam->SetVariableLinearColor("EndColor", EndColor);      
+						if (!Primitive.Colors.IsEmpty())
+						{
+							FLinearColor StartColor = FLinearColor(Primitive.Colors[LineIndex * 2]).ToFColor(true);
+							FLinearColor EndColor = FLinearColor(Primitive.Colors[LineIndex * 2 + 1]).ToFColor(true);
+
+							// Colours are appearing too bright. Should they be squared, cubed?
+							StartColor.R *= StartColor.R * StartColor.R;
+							StartColor.G *= StartColor.G * StartColor.G;
+							StartColor.B *= StartColor.B * StartColor.B;
+
+							// Colours are appearing too bright. Should they be squared, cubed?
+							EndColor.R *= EndColor.R * EndColor.R;
+							EndColor.G *= EndColor.G * EndColor.G;
+							EndColor.B *= EndColor.B * EndColor.B;
+
+							Beam->SetVariableLinearColor("StartColor", StartColor);
+							Beam->SetVariableLinearColor("EndColor", EndColor);
+						}
 					}
 				}
-				else {
+				else 
+				{
 					UE_LOG(LogTemp, Log, TEXT("Failed to create NiagaraSystem with Line. :("));
 				}
 
 				return StaticMesh;
 			}
 
-			if (Primitive.Mode == MODE_POINTS) {
+			if (Primitive.Mode == MODE_POINTS) 
+			{
 				UNiagaraSystem* NS = LoadObject<UNiagaraSystem>(nullptr, TEXT("/glTFRuntime/P_Point_glTFRuntime"), nullptr, LOAD_None, nullptr);
 
-
-				if (bApplyAdditionalTransforms) {
-					UE_LOG(LogTemp, Log, TEXT("Additional transforms wanted for points."));
-				}
-
-				if (NS) {
-					UE_LOG(LogTemp, Log, TEXT("Successfully created NiagaraSystem with Points."));
-
+				if (NS) 
+				{
 					TArray<FVector> Positions;
 					Positions.Init(FVector::ZeroVector, NumVertexInstancesPerSection);
 					TArray<FLinearColor> Colors;
@@ -257,12 +256,21 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 					// NOTE: Glyphers are not yet supported.
 
 					// Collect points.
-					for (int32 PointIndex = 0; PointIndex < NumVertexInstancesPerSection; PointIndex++) {
+					for (int32 PointIndex = 0; PointIndex < NumVertexInstancesPerSection; PointIndex++) 
+					{
 						int32 VertexIndexStart = Primitive.Indices[PointIndex];
 						Positions[PointIndex] = FVector(GetSafeValue(Primitive.Positions, VertexIndexStart, FVector::ZeroVector, bMissingIgnore));
-						//Colors[PointIndex] = FLinearColor(Primitive.Colors[PointIndex]).ToFColor(true);
-					}
+						
+						if (!Primitive.Colors.IsEmpty()) 
+						{
+							Colors[PointIndex] = FLinearColor(Primitive.Colors[PointIndex]).ToFColor(true);
 
+							// Colours are appearing too bright. Should they be squared, cubed?
+							Colors[PointIndex].R *= Colors[PointIndex].R * Colors[PointIndex].R;
+							Colors[PointIndex].G *= Colors[PointIndex].G * Colors[PointIndex].G;
+							Colors[PointIndex].B *= Colors[PointIndex].B * Colors[PointIndex].B;
+						}
+					}
 
 					UNiagaraComponent* PointCloud = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
 						StaticMesh->GetWorld(), NS, FVector::Zero(), FRotator(0,0,0), FVector::One(), true, true, ENCPoolMethod::AutoRelease, true);
@@ -270,23 +278,18 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 					PointCloud->SetVariableInt("Count", NumVertexInstancesPerSection);
 					UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(
 						PointCloud, "Positions", Positions);
-					//UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayColor(
-					//	PointCloud, "Colors", Colors);
-
-					// UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), NS, PositionStart, Rotation, Length, true, true, ENCPoolMethod::AutoRelease, true);
-						// Add array of vectors as a value
-						// Place each particle at a position in that array
-						// Each particle is an instance of a static mesh(?)
-						// Each particle has a colour associated
+					UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayColor(
+						PointCloud, "Colors", Colors);
 				}
-				else {
+				else 
+				{
 					UE_LOG(LogTemp, Log, TEXT("Failed to create NiagaraSystem with Points. :("));
 				}
 
 				return StaticMesh;
 			}
 
-			Section.NumTriangles = NumVertexInstancesPerSection / 3; // Will need to change if dealing with lines or points
+			Section.NumTriangles = NumVertexInstancesPerSection / 3; 
 			Section.FirstIndex = VertexInstanceBaseIndex;
 			Section.bEnableCollision = true;
 			Section.bCastShadow = true;
