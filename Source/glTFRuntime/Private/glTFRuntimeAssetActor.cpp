@@ -208,7 +208,11 @@ void AglTFRuntimeAssetActor::ProcessNode(USceneComponent* NodeParentComponent, c
 				}
 			}
 
-			UStaticMesh* StaticMesh = Asset->LoadStaticMeshLODs(MeshIndices, StaticMeshConfig);
+			UStaticMesh* StaticMesh = Asset->LoadStaticMeshLODs(MeshIndices, StaticMeshConfig, StaticMeshComponent); // Maybe bring StaticMeshComponent with?
+																								// (since transform info is included in StaticMeshComponent)
+																								// There are a few functions down the chain
+																								// It doesn't seem like anything else calls this function.
+																								// (give default value just in case, to avoid breaking everything)
 			if (StaticMesh && !StaticMeshConfig.ExportOriginalPivotToSocket.IsEmpty())
 			{
 				UStaticMeshSocket* DeltaSocket = StaticMesh->FindSocket(FName(StaticMeshConfig.ExportOriginalPivotToSocket));

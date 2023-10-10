@@ -103,7 +103,7 @@ void FglTFRuntimeParser::LoadStaticMeshAsync(const int32 MeshIndex, const FglTFR
 		});
 }
 
-UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe> StaticMeshContext)
+UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe> StaticMeshContext, const UStaticMeshComponent* StaticMeshComponent)
 {
 	SCOPED_NAMED_EVENT(FglTFRuntimeParser_LoadStaticMesh_Internal, FColor::Magenta);
 
@@ -172,7 +172,7 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 
 		for (const FglTFRuntimePrimitive& Primitive : LOD->Primitives)
 		{
-
+			UE_LOG(LogTemp, Log, TEXT("I am unreal running new code, and not just like old code."));
 
 			bool bMissingNormals = false;
 			bool bMissingTangents = false;
@@ -218,20 +218,24 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 							FLinearColor StartColor = FLinearColor(Primitive.Colors[LineIndex * 2]).ToFColor(true);
 							FLinearColor EndColor = FLinearColor(Primitive.Colors[LineIndex * 2 + 1]).ToFColor(true);
 
-							// Colours are appearing too bright. Should they be squared, cubed?
-							StartColor.R *= StartColor.R * StartColor.R;
-							StartColor.G *= StartColor.G * StartColor.G;
-							StartColor.B *= StartColor.B * StartColor.B;
+							//// Colours are appearing too bright. Should they be squared, cubed?
+							//StartColor.R *= StartColor.R * StartColor.R;
+							//StartColor.G *= StartColor.G * StartColor.G;
+							//StartColor.B *= StartColor.B * StartColor.B;
 
-							// Colours are appearing too bright. Should they be squared, cubed?
-							EndColor.R *= EndColor.R * EndColor.R;
-							EndColor.G *= EndColor.G * EndColor.G;
-							EndColor.B *= EndColor.B * EndColor.B;
+							//// Colours are appearing too bright. Should they be squared, cubed?
+							//EndColor.R *= EndColor.R * EndColor.R;
+							//EndColor.G *= EndColor.G * EndColor.G;
+							//EndColor.B *= EndColor.B * EndColor.B;
 
 							Beam->SetVariableLinearColor("StartColor", StartColor);
 							Beam->SetVariableLinearColor("EndColor", EndColor);
 						}
 					}
+
+					// Note: Transforms are typically handled by StaticMesh, but since
+					// this is not a static mesh, we will need to handle the transforms
+					// another way.
 				}
 				else 
 				{
@@ -265,10 +269,10 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 						{
 							Colors[PointIndex] = FLinearColor(Primitive.Colors[PointIndex]).ToFColor(true);
 
-							// Colours are appearing too bright. Should they be squared, cubed?
-							Colors[PointIndex].R *= Colors[PointIndex].R * Colors[PointIndex].R;
-							Colors[PointIndex].G *= Colors[PointIndex].G * Colors[PointIndex].G;
-							Colors[PointIndex].B *= Colors[PointIndex].B * Colors[PointIndex].B;
+							//// Colours are appearing too bright. Should they be squared, cubed?
+							//Colors[PointIndex].R *= Colors[PointIndex].R * Colors[PointIndex].R;
+							//Colors[PointIndex].G *= Colors[PointIndex].G * Colors[PointIndex].G;
+							//Colors[PointIndex].B *= Colors[PointIndex].B * Colors[PointIndex].B;
 						}
 					}
 
@@ -977,7 +981,7 @@ TArray<UStaticMesh*> FglTFRuntimeParser::LoadStaticMeshesFromPrimitives(const in
 	return StaticMeshes;
 }
 
-UStaticMesh* FglTFRuntimeParser::LoadStaticMeshLODs(const TArray<int32>& MeshIndices, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig)
+UStaticMesh* FglTFRuntimeParser::LoadStaticMeshLODs(const TArray<int32>& MeshIndices, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig, const UStaticMeshComponent* StaticMeshComponent = nullptr)
 {
 
 	TSharedRef<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe> StaticMeshContext = MakeShared<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe>(AsShared(), StaticMeshConfig);
@@ -1000,7 +1004,7 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMeshLODs(const TArray<int32>& MeshInd
 		StaticMeshContext->LODs.Add(LOD);
 	}
 
- 	UStaticMesh* StaticMesh = LoadStaticMesh_Internal(StaticMeshContext);
+ 	UStaticMesh* StaticMesh = LoadStaticMesh_Internal(StaticMeshContext, StaticMeshComponent);
 	if (StaticMesh)
 	{
 		return FinalizeStaticMesh(StaticMeshContext);

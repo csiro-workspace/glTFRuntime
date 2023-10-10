@@ -274,11 +274,11 @@ UStaticMesh* UglTFRuntimeAsset::LoadStaticMeshRecursive(const FString& NodeName,
 	return Parser->LoadStaticMeshRecursive(NodeName, ExcludeNodes, StaticMeshConfig);
 }
 
-UStaticMesh* UglTFRuntimeAsset::LoadStaticMeshLODs(const TArray<int32>& MeshIndices, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig)
+UStaticMesh* UglTFRuntimeAsset::LoadStaticMeshLODs(const TArray<int32>& MeshIndices, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig, const UStaticMeshComponent* StaticMeshComponent)
 {
 	GLTF_CHECK_PARSER(nullptr);
 
-	return Parser->LoadStaticMeshLODs(MeshIndices, StaticMeshConfig);
+	return Parser->LoadStaticMeshLODs(MeshIndices, StaticMeshConfig, StaticMeshComponent);
 }
 
 USkeletalMesh* UglTFRuntimeAsset::LoadSkeletalMeshLODs(const TArray<int32>& MeshIndices, const int32 SkinIndex, const FglTFRuntimeSkeletalMeshConfig& SkeletalMeshConfig)
