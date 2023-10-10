@@ -112,6 +112,7 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 	UStaticMesh* StaticMesh = StaticMeshContext->StaticMesh;
 	FStaticMeshRenderData* RenderData = StaticMeshContext->RenderData;
 	const FglTFRuntimeStaticMeshConfig& StaticMeshConfig = StaticMeshContext->StaticMeshConfig;
+	FName ExportOriginalPivotToSocket = FName(StaticMeshConfig.ExportOriginalPivotToSocket);
 	const TArray<const FglTFRuntimeMeshLOD*>& LODs = StaticMeshContext->LODs;
 
 	bool bHasVertexColors = false;
@@ -981,7 +982,7 @@ TArray<UStaticMesh*> FglTFRuntimeParser::LoadStaticMeshesFromPrimitives(const in
 	return StaticMeshes;
 }
 
-UStaticMesh* FglTFRuntimeParser::LoadStaticMeshLODs(const TArray<int32>& MeshIndices, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig, const UStaticMeshComponent* StaticMeshComponent = nullptr)
+UStaticMesh* FglTFRuntimeParser::LoadStaticMeshLODs(const TArray<int32>& MeshIndices, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig, const UStaticMeshComponent* StaticMeshComponent)
 {
 
 	TSharedRef<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe> StaticMeshContext = MakeShared<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe>(AsShared(), StaticMeshConfig);
