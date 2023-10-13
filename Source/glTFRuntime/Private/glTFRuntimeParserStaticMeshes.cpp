@@ -173,8 +173,6 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 
 		for (const FglTFRuntimePrimitive& Primitive : LOD->Primitives)
 		{
-			UE_LOG(LogTemp, Log, TEXT("I am unreal running new code, and not just like old code."));
-
 			bool bMissingNormals = false;
 			bool bMissingTangents = false;
 			bool bMissingIgnore = false;
@@ -188,6 +186,12 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 
 			if (Primitive.Mode == MODE_LINES) 
 			{
+				const FTransform MeshTransform = FTransform(
+					StaticMeshComponent->GetComponentRotation(),
+					StaticMeshComponent->GetComponentLocation(), 
+					StaticMeshComponent->GetComponentScale()
+				);
+
 				// Create Niagara beam with that material.
 				UNiagaraSystem* NS = LoadObject<UNiagaraSystem>(nullptr, TEXT("/glTFRuntime/P_Line_glTFRuntime"), nullptr, LOAD_None, nullptr);
 
@@ -198,9 +202,14 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 					{
 						int32 VertexIndexStart = Primitive.Indices[LineIndex * 2];
 						FVector PositionStart = FVector(GetSafeValue(Primitive.Positions, VertexIndexStart, FVector::ZeroVector, bMissingIgnore));
-						
+
 						int32 VertexIndexEnd = Primitive.Indices[LineIndex * 2 + 1];
 						FVector PositionEnd = FVector(GetSafeValue(Primitive.Positions, VertexIndexEnd, FVector::ZeroVector, bMissingIgnore));
+
+						// Lines and Points are not handled by UStaticMesh, therefore local2world transforms
+						// applied manually.
+						PositionStart = MeshTransform.TransformPosition(PositionStart);
+						PositionEnd = MeshTransform.TransformPosition(PositionEnd);
 
 						FVector Diff = PositionEnd - PositionStart;
 						FVector UnitDiff = FVector(Diff);
@@ -233,10 +242,6 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 							Beam->SetVariableLinearColor("EndColor", EndColor);
 						}
 					}
-
-					// Note: Transforms are typically handled by StaticMesh, but since
-					// this is not a static mesh, we will need to handle the transforms
-					// another way.
 				}
 				else 
 				{
@@ -248,6 +253,12 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 
 			if (Primitive.Mode == MODE_POINTS) 
 			{
+				const FTransform MeshTransform = FTransform(
+					StaticMeshComponent->GetComponentRotation(),
+					StaticMeshComponent->GetComponentLocation(),
+					StaticMeshComponent->GetComponentScale()
+				);
+
 				UNiagaraSystem* NS = LoadObject<UNiagaraSystem>(nullptr, TEXT("/glTFRuntime/P_Point_glTFRuntime"), nullptr, LOAD_None, nullptr);
 
 				if (NS) 
@@ -265,7 +276,11 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 					{
 						int32 VertexIndexStart = Primitive.Indices[PointIndex];
 						Positions[PointIndex] = FVector(GetSafeValue(Primitive.Positions, VertexIndexStart, FVector::ZeroVector, bMissingIgnore));
-						
+
+						// Lines and Points are not handled by UStaticMesh, therefore local2world transforms
+						// applied manually.
+						Positions[PointIndex] = MeshTransform.TransformPosition(Positions[PointIndex]);
+
 						if (!Primitive.Colors.IsEmpty()) 
 						{
 							Colors[PointIndex] = FLinearColor(Primitive.Colors[PointIndex]).ToFColor(true);
@@ -1006,6 +1021,7 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMeshLODs(const TArray<int32>& MeshInd
 	}
 
  	UStaticMesh* StaticMesh = LoadStaticMesh_Internal(StaticMeshContext, StaticMeshComponent);
+
 	if (StaticMesh)
 	{
 		return FinalizeStaticMesh(StaticMeshContext);
