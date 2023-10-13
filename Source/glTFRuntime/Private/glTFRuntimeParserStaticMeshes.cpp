@@ -292,6 +292,8 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 						}
 					}
 
+					GeneratePointcloudInstance(Positions, Colors);
+
 					UNiagaraComponent* PointCloud = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
 						StaticMesh->GetWorld(), NS, FVector::Zero(), FRotator(0,0,0), FVector::One(), true, true, ENCPoolMethod::AutoRelease, true);
 
@@ -711,6 +713,12 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 	OnPostCreatedStaticMesh.Broadcast(StaticMeshContext);
 
 	return StaticMesh;
+}
+
+void FglTFRuntimeParser::GeneratePointcloudInstance(const TArray<FVector>& Positions, const TArray<FLinearColor>& Colors) {
+	// TODO: Implement code from Andre Mühlenbrock, 2020
+	// See https://www.youtube.com/watch?v=TmG-XIxaLVQ&ab_channel=phirede
+	// Also see PointCloudRenderer.cpp, which I've just chucked directly into my Internship folder.
 }
 
 UStaticMesh* FglTFRuntimeParser::FinalizeStaticMesh(TSharedRef<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe> StaticMeshContext)
