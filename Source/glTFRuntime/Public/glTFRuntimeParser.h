@@ -29,7 +29,12 @@
 #include "Serialization/ArrayReader.h"
 #include "Streaming/TextureMipDataProvider.h"
 #include "UObject/Package.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraDataInterfaceArrayFunctionLibrary.h"
+#include "NiagaraComponent.h"
+#include "NiagaraDataInterfaceTexture.h"
 #include "glTFRuntimeParser.generated.h"
+
 
 GLTFRUNTIME_API DECLARE_LOG_CATEGORY_EXTERN(LogGLTFRuntime, Log, All);
 
@@ -2234,7 +2239,8 @@ protected:
 	bool LoadMeshIntoMeshLOD(TSharedRef<FJsonObject> JsonMeshObject, FglTFRuntimeMeshLOD*& LOD, const FglTFRuntimeMaterialsConfig& MaterialsConfig);
 
 	UStaticMesh* LoadStaticMesh_Internal(TSharedRef<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe> StaticMeshContext, const UStaticMeshComponent* StaticMeshComponent = nullptr);
-	void GeneratePointcloudInstance(const TArray<FVector>& Positions, const TArray<FLinearColor>& Colors);
+	void InjectPointcloudData(UNiagaraComponent* PointCloud, TArray<float>& Positions, TArray<uint8_t>& Colors, const int32 PointCount);
+	void SetNiagaraVariableTexture(UNiagaraComponent* PointCloud, const FString VariableName, UTexture* Texture);
 	UMaterialInterface* LoadMaterial_Internal(const int32 Index, const FString& MaterialName, TSharedRef<FJsonObject> JsonMaterialObject, const FglTFRuntimeMaterialsConfig& MaterialsConfig, const bool bUseVertexColors);
 	bool LoadNode_Internal(int32 Index, TSharedRef<FJsonObject> JsonNodeObject, int32 NodesCount, FglTFRuntimeNode& Node);
 

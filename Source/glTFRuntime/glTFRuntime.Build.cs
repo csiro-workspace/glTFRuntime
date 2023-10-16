@@ -11,13 +11,13 @@ public class glTFRuntime : ModuleRules
 
         PublicIncludePaths.AddRange(
             new string[] {
+                "Niagara"
             }
             );
 
 
         PrivateIncludePaths.AddRange(
             new string[] {
-                "Niagara"
             }
             );
 
@@ -27,6 +27,7 @@ public class glTFRuntime : ModuleRules
             {
                 "Core",
                 "ProceduralMeshComponent",
+                "Niagara"
             }
             );
 
@@ -47,8 +48,7 @@ public class glTFRuntime : ModuleRules
                 "Projects",
                 "MeshDescription",
                 "StaticMeshDescription",
-                "AudioExtensions",
-                "Niagara"
+                "AudioExtensions"
             }
             );
 

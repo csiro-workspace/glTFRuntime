@@ -10,11 +10,9 @@
 #include "Editor/EditorEngine.h"
 #endif
 #include "PhysicsEngine/BodySetup.h"
+#include "Kismet/KismetMathLibrary.h"
 #include "Runtime/Launch/Resources/Version.h"
 #include "StaticMeshResources.h"
-#include "NiagaraFunctionLibrary.h"
-#include "NiagaraDataInterfaceArrayFunctionLibrary.h"
-#include "NiagaraComponent.h"
 
 #define MODE_POINTS 0
 #define MODE_LINES 1
@@ -263,10 +261,15 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 
 				if (NS) 
 				{
-					TArray<FVector> Positions;
-					Positions.Init(FVector::ZeroVector, NumVertexInstancesPerSection);
-					TArray<FLinearColor> Colors;
-					Colors.Init(FLinearColor::Green, NumVertexInstancesPerSection);
+					// Each element of Positions or Colors is one component of a Vector4.
+					// i.e. Positions[4*n]     = X,		Colours[4*n]     = B
+					//      Positions[4*n + 1] = Y,		Colours[4*n + 1] = G
+					//      Positions[4*n + 2] = Z,		Colours[4*n + 2] = R
+					//      Positions[4*n + 3] =  ,		Colours[4*n + 3] = A
+					TArray<float> Positions;
+					Positions.Init(0.0f, NumVertexInstancesPerSection*4);
+					TArray<uint8_t> Colors;
+					Colors.Init(0, NumVertexInstancesPerSection*4);
 
 					// Spawn particle for each point.
 					// NOTE: Glyphers are not yet supported.
@@ -275,33 +278,39 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 					for (int32 PointIndex = 0; PointIndex < NumVertexInstancesPerSection; PointIndex++) 
 					{
 						int32 VertexIndexStart = Primitive.Indices[PointIndex];
-						Positions[PointIndex] = FVector(GetSafeValue(Primitive.Positions, VertexIndexStart, FVector::ZeroVector, bMissingIgnore));
 
+						FVector Position = FVector(GetSafeValue(Primitive.Positions, VertexIndexStart, FVector::ZeroVector, bMissingIgnore));
+						FLinearColor Color;
 						// Lines and Points are not handled by UStaticMesh, therefore local2world transforms
 						// applied manually.
-						Positions[PointIndex] = MeshTransform.TransformPosition(Positions[PointIndex]);
+						Position = MeshTransform.TransformPosition(Position);
 
 						if (!Primitive.Colors.IsEmpty()) 
 						{
-							Colors[PointIndex] = FLinearColor(Primitive.Colors[PointIndex]).ToFColor(true);
+							Color = FLinearColor(Primitive.Colors[PointIndex]).ToFColor(true);
 
 							//// Colours are appearing too bright. Should they be squared, cubed?
 							//Colors[PointIndex].R *= Colors[PointIndex].R * Colors[PointIndex].R;
 							//Colors[PointIndex].G *= Colors[PointIndex].G * Colors[PointIndex].G;
 							//Colors[PointIndex].B *= Colors[PointIndex].B * Colors[PointIndex].B;
 						}
+
+						Positions[4 * PointIndex] = Position.X;
+						Positions[4 * PointIndex + 1] = Position.Y;
+						Positions[4 * PointIndex + 2] = Position.Z;
+
+						Colors[4 * PointIndex] = Color.B * 255;
+						Colors[4 * PointIndex + 1] = Color.G * 255;
+						Colors[4 * PointIndex + 2] = Color.R * 255;
+						Colors[4 * PointIndex + 3] = Color.A * 255;
 					}
 
-					GeneratePointcloudInstance(Positions, Colors);
-
 					UNiagaraComponent* PointCloud = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-						StaticMesh->GetWorld(), NS, FVector::Zero(), FRotator(0,0,0), FVector::One(), true, true, ENCPoolMethod::AutoRelease, true);
+						StaticMesh->GetWorld(), NS, FVector::Zero(), FRotator(0, 0, 0), FVector::One(), true, true, ENCPoolMethod::AutoRelease, true);
 
-					PointCloud->SetVariableInt("Count", NumVertexInstancesPerSection);
-					UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(
-						PointCloud, "Positions", Positions);
-					UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayColor(
-						PointCloud, "Colors", Colors);
+					InjectPointcloudData(PointCloud, Positions, Colors, NumVertexInstancesPerSection);
+
+					
 				}
 				else 
 				{
@@ -715,11 +724,67 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 	return StaticMesh;
 }
 
-void FglTFRuntimeParser::GeneratePointcloudInstance(const TArray<FVector>& Positions, const TArray<FLinearColor>& Colors) {
-	// TODO: Implement code from Andre Mühlenbrock, 2020
-	// See https://www.youtube.com/watch?v=TmG-XIxaLVQ&ab_channel=phirede
-	// Also see PointCloudRenderer.cpp, which I've just chucked directly into my Internship folder.
+// Implementation of code from Andre Mühlenbrock, 2020
+// See https://www.youtube.com/watch?v=TmG-XIxaLVQ&ab_channel=phirede
+void FglTFRuntimeParser::InjectPointcloudData(UNiagaraComponent* PointCloud, TArray<float>& Positions, TArray<uint8_t>& Colors, const int32 PointCount) {
+	
+	// Find an appropriate texture height and width
+	// (Each edge length a power of 2, approximately square shaped, and as small as possible)
+	float SqrtPointCount = UKismetMathLibrary::Sqrt(PointCount);
+	int32 SqrtNextPow2 = pow(2, ceil(log(SqrtPointCount) / log(2)));
+	int32 TextureWidth = SqrtNextPow2;
+	int32 TextureHeight = (SqrtNextPow2 * SqrtNextPow2 / 2 > PointCount) ? SqrtNextPow2 / 2 : SqrtNextPow2;
+
+	// Pad positions and colors to size of texture in order to prevent raw memory being read/written later.
+	Positions.AddDefaulted(TextureWidth * TextureHeight - PointCount);
+	Colors.AddDefaulted(TextureWidth * TextureHeight - PointCount);
+
+	FUpdateTextureRegion2D Region = FUpdateTextureRegion2D(0, 0, 0, 0, TextureWidth, TextureHeight);
+	
+	// Create textures
+	UTexture2D* PositionTexture = UTexture2D::CreateTransient(TextureWidth, TextureHeight, PF_A32B32G32R32F, "PositionData");
+	PositionTexture->Filter = TF_Nearest;
+	PositionTexture->UpdateResource();
+
+	UTexture2D* ColorTexture = UTexture2D::CreateTransient(TextureWidth, TextureHeight, PF_B8G8R8A8, "ColorTexture");
+	ColorTexture->Filter = TF_Nearest;
+	ColorTexture->UpdateResource();
+
+	// Set the niagara system user variables:
+	SetNiagaraVariableTexture(PointCloud, "User.PositionTexture", PositionTexture);
+	SetNiagaraVariableTexture(PointCloud, "User.ColorTexture", ColorTexture);
+
+	PointCloud->SetVariableInt("User.Count", PointCount);
+	PointCloud->SetVariableInt("User.TextureWidth", TextureWidth);
+	PointCloud->SetVariableInt("User.TextureHeight", TextureHeight);
+
+	uint8* PositionData = (uint8*)Positions.GetData();
+	uint8* ColorData = (uint8*)Colors.GetData();
+
+	// Bring the data into the texture
+	PositionTexture->UpdateTextureRegions(0, 1, &Region, TextureWidth * 4 * sizeof(float) / 4, 
+		4 * sizeof(float), PositionData);
+
+	ColorTexture->UpdateTextureRegions(0, 1, &Region, TextureWidth * 4 * sizeof(uint8_t) / 4,
+		4 * sizeof(uint8_t), ColorData);
 }
+
+
+/**
+ * Just a helper method to set a texture for a user variable because the UNiagaraComponent
+ * has no direct way to edit a texture variable compared to float, vectors, ...
+ */
+void FglTFRuntimeParser::SetNiagaraVariableTexture(UNiagaraComponent* PointCloud, const FString VariableName, UTexture* Texture) {
+	if (!PointCloud || !Texture)
+		return;
+
+	FNiagaraUserRedirectionParameterStore& OverrideParameters = PointCloud->GetOverrideParameters();
+	FNiagaraVariable NiagaraVariable = FNiagaraVariable(FNiagaraTypeDefinition(UNiagaraDataInterfaceTexture::StaticClass()), *VariableName);
+
+	UNiagaraDataInterfaceTexture* DataInterface = (UNiagaraDataInterfaceTexture*)OverrideParameters.GetDataInterface(NiagaraVariable);
+	DataInterface->SetTexture(Texture);
+}
+
 
 UStaticMesh* FglTFRuntimeParser::FinalizeStaticMesh(TSharedRef<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe> StaticMeshContext)
 {
