@@ -2236,6 +2236,13 @@ protected:
 
 	TArray64<uint8> BinaryBuffer;
 
+	// Injecting Pointcloud Data
+	UTexture2D* PositionTexture;
+	UTexture2D* ColorTexture;
+	FUpdateTextureRegion2D Region;
+	uint8* PositionData;
+	uint8* ColorData;
+
 	bool LoadMeshIntoMeshLOD(TSharedRef<FJsonObject> JsonMeshObject, FglTFRuntimeMeshLOD*& LOD, const FglTFRuntimeMaterialsConfig& MaterialsConfig);
 
 	UStaticMesh* LoadStaticMesh_Internal(TSharedRef<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe> StaticMeshContext, const UStaticMeshComponent* StaticMeshComponent = nullptr);

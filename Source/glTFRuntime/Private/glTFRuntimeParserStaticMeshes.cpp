@@ -246,7 +246,8 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 					UE_LOG(LogTemp, Log, TEXT("Failed to create NiagaraSystem with Line. :("));
 				}
 
-				return StaticMesh;
+				return nullptr;
+				//return StaticMesh;
 			}
 
 			if (Primitive.Mode == MODE_POINTS) 
@@ -317,7 +318,8 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 					UE_LOG(LogTemp, Log, TEXT("Failed to create NiagaraSystem with Points. :("));
 				}
 
-				return StaticMesh;
+				return nullptr;
+				//return StaticMesh;
 			}
 
 			Section.NumTriangles = NumVertexInstancesPerSection / 3; 
@@ -736,17 +738,21 @@ void FglTFRuntimeParser::InjectPointcloudData(UNiagaraComponent* PointCloud, TAr
 	int32 TextureHeight = (SqrtNextPow2 * SqrtNextPow2 / 2 > PointCount) ? SqrtNextPow2 / 2 : SqrtNextPow2;
 
 	// Pad positions and colors to size of texture in order to prevent raw memory being read/written later.
-	Positions.AddDefaulted(TextureWidth * TextureHeight - PointCount);
-	Colors.AddDefaulted(TextureWidth * TextureHeight - PointCount);
+	// Initial size is 4 * PointCount
+	// Final size should be 4 * TextureWidth * TextureHeight
+	Positions.AddDefaulted(4 * (TextureWidth * TextureHeight - PointCount));
+	Colors.AddDefaulted(4 * (TextureWidth * TextureHeight - PointCount));
 
-	FUpdateTextureRegion2D Region = FUpdateTextureRegion2D(0, 0, 0, 0, TextureWidth, TextureHeight);
-	
+	Region = FUpdateTextureRegion2D(0, 0, 0, 0, TextureWidth, TextureHeight);
+	UE_LOG(LogTemp, Log, TEXT("Region Width: %d"), Region.Width);
+	UE_LOG(LogTemp, Log, TEXT("Region Height: %d"), Region.Height);
+
 	// Create textures
-	UTexture2D* PositionTexture = UTexture2D::CreateTransient(TextureWidth, TextureHeight, PF_A32B32G32R32F, "PositionData");
+	PositionTexture = UTexture2D::CreateTransient(TextureWidth, TextureHeight, PF_A32B32G32R32F, "PositionData");
 	PositionTexture->Filter = TF_Nearest;
 	PositionTexture->UpdateResource();
 
-	UTexture2D* ColorTexture = UTexture2D::CreateTransient(TextureWidth, TextureHeight, PF_B8G8R8A8, "ColorTexture");
+	ColorTexture = UTexture2D::CreateTransient(TextureWidth, TextureHeight, PF_B8G8R8A8, "ColorTexture");
 	ColorTexture->Filter = TF_Nearest;
 	ColorTexture->UpdateResource();
 
@@ -758,15 +764,28 @@ void FglTFRuntimeParser::InjectPointcloudData(UNiagaraComponent* PointCloud, TAr
 	PointCloud->SetVariableInt("User.TextureWidth", TextureWidth);
 	PointCloud->SetVariableInt("User.TextureHeight", TextureHeight);
 
-	uint8* PositionData = (uint8*)Positions.GetData();
-	uint8* ColorData = (uint8*)Colors.GetData();
+	PositionData = new uint8[4 * PointCount * sizeof(float)];
+	ColorData = new uint8[4 * PointCount * sizeof(uint8_t)];
+	PositionData = (uint8*)Positions.GetData();
+	ColorData = (uint8*)Colors.GetData();
 
 	// Bring the data into the texture
-	PositionTexture->UpdateTextureRegions(0, 1, &Region, TextureWidth * 4 * sizeof(float) / 4, 
-		4 * sizeof(float), PositionData);
+	uint32 PositionPixelWidth = 4 * sizeof(float);
+	uint32 PositionPitch = TextureWidth * PositionPixelWidth;
 
-	ColorTexture->UpdateTextureRegions(0, 1, &Region, TextureWidth * 4 * sizeof(uint8_t) / 4,
-		4 * sizeof(uint8_t), ColorData);
+	UE_LOG(LogTemp, Log, TEXT("Position Pitch: %d"), PositionPitch);
+	UE_LOG(LogTemp, Log, TEXT("Position Pixel: %d"), PositionPixelWidth);
+	
+	PositionTexture->UpdateTextureRegions(0, 1, &Region, PositionPitch, PositionPixelWidth,
+		PositionData);
+
+	uint32 ColorPixelWidth = 4 * sizeof(uint8_t);
+	uint32 ColorPitch = TextureWidth * ColorPixelWidth;
+
+	UE_LOG(LogTemp, Log, TEXT("Color Pitch: %d"), ColorPitch);
+	UE_LOG(LogTemp, Log, TEXT("Color Pixel: %d"), ColorPixelWidth);
+
+	ColorTexture->UpdateTextureRegions(0, 1, &Region, ColorPitch, ColorPixelWidth, ColorData);
 }
 
 
