@@ -21,6 +21,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/AudioComponent.h"
 #include "Components/LightComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "glTFRuntimeAnimationCurve.h"
 #include "ProceduralMeshComponent.h"
 #if WITH_EDITOR
@@ -29,6 +30,7 @@
 #include "Serialization/ArrayReader.h"
 #include "Streaming/TextureMipDataProvider.h"
 #include "UObject/Package.h"
+#include "UObject/ConstructorHelpers.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraDataInterfaceArrayFunctionLibrary.h"
 #include "NiagaraComponent.h"
@@ -1986,7 +1988,7 @@ public:
 	UStaticMesh* LoadStaticMeshRecursive(const FString& NodeName, const TArray<FString>& ExcludeNodes, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig);
 	void LoadStaticMeshRecursiveAsync(const FString& NodeName, const TArray<FString>& ExcludeNodes, const FglTFRuntimeStaticMeshAsync& AsyncCallback, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig);
 
-	UStaticMesh* LoadStaticMeshLODs(const TArray<int32>& MeshIndices, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig, const UStaticMeshComponent* StaticMeshComponent = nullptr);
+	UStaticMesh* LoadStaticMeshLODs(const TArray<int32>& MeshIndices, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig, UStaticMeshComponent* StaticMeshComponent = nullptr);
 
 	UStaticMesh* LoadStaticMeshByName(const FString MeshName, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig);
 
@@ -2245,7 +2247,7 @@ protected:
 
 	bool LoadMeshIntoMeshLOD(TSharedRef<FJsonObject> JsonMeshObject, FglTFRuntimeMeshLOD*& LOD, const FglTFRuntimeMaterialsConfig& MaterialsConfig);
 
-	UStaticMesh* LoadStaticMesh_Internal(TSharedRef<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe> StaticMeshContext, const UStaticMeshComponent* StaticMeshComponent = nullptr);
+	UStaticMesh* LoadStaticMesh_Internal(TSharedRef<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe> StaticMeshContext, UStaticMeshComponent* StaticMeshComponent = nullptr);
 	void InjectPointcloudData(UNiagaraComponent* PointCloud, TArray<float>& Positions, TArray<uint8_t>& Colors, const int32 PointCount);
 	void SetNiagaraVariableTexture(UNiagaraComponent* PointCloud, const FString VariableName, UTexture* Texture);
 	UMaterialInterface* LoadMaterial_Internal(const int32 Index, const FString& MaterialName, TSharedRef<FJsonObject> JsonMaterialObject, const FglTFRuntimeMaterialsConfig& MaterialsConfig, const bool bUseVertexColors);
