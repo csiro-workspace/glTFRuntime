@@ -101,12 +101,18 @@ void FglTFRuntimeParser::LoadStaticMeshAsync(const int32 MeshIndex, const FglTFR
 		});
 }
 
-UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe> StaticMeshContext, UStaticMeshComponent* StaticMeshComponent)
+UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe> StaticMeshContext) {
+	UStaticMeshComponent* Dummy = NewObject<UStaticMeshComponent>();
+	return LoadStaticMesh_Internal(StaticMeshContext, Dummy);
+}
+
+UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe> StaticMeshContext, UStaticMeshComponent*& StaticMeshComponent)
 {
 	SCOPED_NAMED_EVENT(FglTFRuntimeParser_LoadStaticMesh_Internal, FColor::Magenta);
 
 	OnPreCreatedStaticMesh.Broadcast(StaticMeshContext);
 
+	bFinalizeStaticMesh = true;
 	UStaticMesh* StaticMesh = StaticMeshContext->StaticMesh;
 	FStaticMeshRenderData* RenderData = StaticMeshContext->RenderData;
 	const FglTFRuntimeStaticMeshConfig& StaticMeshConfig = StaticMeshContext->StaticMeshConfig;
@@ -311,7 +317,11 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 						StaticMeshComponent = InstancedStaticMeshComponent;
 
 						// Assume glyphs are spheres
+						// Note this redefines StaticMesh, meaning StaticMeshContext needs to be suitably updated.
 						StaticMesh = LoadObject<UStaticMesh>(nullptr, TEXT("StaticMesh'/Engine/BasicShapes/Sphere.Sphere'"));
+						StaticMeshContext->StaticMesh = StaticMesh;
+						bFinalizeStaticMesh = false;
+						return StaticMesh;
 					}
 					else
 					{
@@ -922,7 +932,7 @@ UStaticMesh* FglTFRuntimeParser::FinalizeStaticMesh(TSharedRef<FglTFRuntimeStati
 	BodySetup->CollisionTraceFlag = StaticMeshConfig.CollisionComplexity;
 
 	BodySetup->InvalidatePhysicsData();
-
+	
 	if (StaticMeshConfig.bBuildSimpleCollision)
 	{
 		FKBoxElem BoxElem;
@@ -964,7 +974,10 @@ UStaticMesh* FglTFRuntimeParser::FinalizeStaticMesh(TSharedRef<FglTFRuntimeStati
 	// recreate physics state (if possible)
 	if (UActorComponent* ActorComponent = Cast<UActorComponent>(StaticMesh->GetOuter()))
 	{
-		ActorComponent->RecreatePhysicsState();
+		// TODO: Uncomment and fix.
+		// Currently freezes for some reason.
+		// 
+		//ActorComponent->RecreatePhysicsState();
 	}
 
 	for (const TPair<FString, FTransform>& Pair : StaticMeshConfig.Sockets)
@@ -1143,7 +1156,7 @@ TArray<UStaticMesh*> FglTFRuntimeParser::LoadStaticMeshesFromPrimitives(const in
 	return StaticMeshes;
 }
 
-UStaticMesh* FglTFRuntimeParser::LoadStaticMeshLODs(const TArray<int32>& MeshIndices, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig, UStaticMeshComponent* StaticMeshComponent)
+UStaticMesh* FglTFRuntimeParser::LoadStaticMeshLODs(const TArray<int32>& MeshIndices, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig, UStaticMeshComponent*& StaticMeshComponent)
 {
 
 	TSharedRef<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe> StaticMeshContext = MakeShared<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe>(AsShared(), StaticMeshConfig);
@@ -1170,7 +1183,13 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMeshLODs(const TArray<int32>& MeshInd
 
 	if (StaticMesh)
 	{
-		return FinalizeStaticMesh(StaticMeshContext);
+		if (bFinalizeStaticMesh) {
+			return FinalizeStaticMesh(StaticMeshContext);
+		}
+		else
+		{
+			return StaticMesh;
+		}
 	}
 	return nullptr;
 }

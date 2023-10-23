@@ -166,13 +166,6 @@ void AglTFRuntimeAssetActor::ProcessNode(USceneComponent* NodeParentComponent, c
 			{
 				StaticMeshComponent->SetupAttachment(NodeParentComponent);
 			}
-			StaticMeshComponent->RegisterComponent();
-			StaticMeshComponent->SetRelativeTransform(Node.Transform);
-			AddInstanceComponent(StaticMeshComponent);
-			if (StaticMeshConfig.Outer == nullptr)
-			{
-				StaticMeshConfig.Outer = StaticMeshComponent;
-			}
 
 			TArray<int32> MeshIndices;
 			MeshIndices.Add(Node.MeshIndex);
@@ -220,6 +213,15 @@ void AglTFRuntimeAssetActor::ProcessNode(USceneComponent* NodeParentComponent, c
 					NewTransform.AddToTranslation(DeltaLocation);
 					StaticMeshComponent->SetRelativeTransform(NewTransform);
 				}
+			}
+
+			StaticMeshComponent->RegisterComponent();
+			StaticMeshComponent->SetRelativeTransform(Node.Transform);
+			AddInstanceComponent(StaticMeshComponent);
+
+			if (StaticMeshConfig.Outer == nullptr)
+			{
+				StaticMeshConfig.Outer = StaticMeshComponent;
 			}
 			StaticMeshComponent->SetStaticMesh(StaticMesh);
 			ReceiveOnStaticMeshComponentCreated(StaticMeshComponent, Node);
