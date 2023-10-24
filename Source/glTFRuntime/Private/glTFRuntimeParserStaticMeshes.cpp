@@ -14,10 +14,16 @@
 #include "Runtime/Launch/Resources/Version.h"
 #include "StaticMeshResources.h"
 
+#define RESTRICT_POINTCLOUD_SIZE_FOR_TESTING_ON_LAPTOP true
+
 #define MODE_POINTS 0
 #define MODE_LINES 1
 #define MODE_TRIANGLES 4
 
+#define GLYPHER_DEFAULT_MESH TEXT("StaticMesh'/glTFRuntime/SM_Sphere_glTFRuntime.SM_Sphere_glTFRuntime'")
+#define GLYPHER_SCALING_FACTOR 0.1f
+
+#define NUM_CUSTOM_FLOATS_PER_INSTANCE 4
 
 FglTFRuntimeStaticMeshContext::FglTFRuntimeStaticMeshContext(TSharedRef<FglTFRuntimeParser> InParser, const FglTFRuntimeStaticMeshConfig& InStaticMeshConfig) :
 	Parser(InParser),
@@ -264,118 +270,142 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 					StaticMeshComponent->GetComponentScale()
 				);
 
+				// In future, Glypher qualities will be sent via glTF.
+				// For now, just have that be set client side.
+				bool bGlyphers = true;
+
+				// Glyphers use instanced rendering do render many objects.
+				if (bGlyphers)
+				{
+					// I'm getting crashes on my laptop due to large pointclouds with InstancedStaticMesh.
+					// Note that this hasn't happened with the particle system.
+					// Also note that the particle system isn't currently working due to a memory bug :(.
+					if (RESTRICT_POINTCLOUD_SIZE_FOR_TESTING_ON_LAPTOP && NumVertexInstancesPerSection > 1000)
+					{
+						UE_LOG(LogTemp, Log, TEXT("Large pointcloud (size %d) ignored due to small laptop."), NumVertexInstancesPerSection);
+						return nullptr;
+					}
+
+					// Assume glyphs are spheres
+					// Note this redefines StaticMesh, meaning StaticMeshContext needs to be suitably updated.
+					StaticMesh = LoadObject<UStaticMesh>(nullptr, GLYPHER_DEFAULT_MESH);
+					StaticMeshContext->StaticMesh = StaticMesh;
+					bFinalizeStaticMesh = false;
+
+					// Use instanced mesh for optimal rendering.
+					TArray<USceneComponent*> Parents;
+					StaticMeshComponent->GetParentComponents(Parents);
+					UInstancedStaticMeshComponent* InstancedStaticMeshComponent = NewObject<UInstancedStaticMeshComponent>(
+						Parents[0], MakeUniqueObjectName(StaticMeshComponent, UInstancedStaticMeshComponent::StaticClass(), "Glyphs"));
+
+					InstancedStaticMeshComponent->NumCustomDataFloats = NUM_CUSTOM_FLOATS_PER_INSTANCE;
+
+					TArray<FVector> Positions;
+					Positions.Init(FVector::ZeroVector, NumVertexInstancesPerSection);
+					TArray<FLinearColor> Colors;
+					Colors.Init(FLinearColor::Green, NumVertexInstancesPerSection);
+
+					// Collect points.
+					for (int32 PointIndex = 0; PointIndex < NumVertexInstancesPerSection; PointIndex++)
+					{
+						int32 VertexIndexStart = Primitive.Indices[PointIndex];
+
+						FVector Position = FVector(GetSafeValue(Primitive.Positions, VertexIndexStart, FVector::ZeroVector, bMissingIgnore));
+						FLinearColor Color;
+
+						// The base static mesh is very large, therefore it must be scaled down.
+						float Scale = GLYPHER_SCALING_FACTOR;
+						FTransform Transform = FTransform(Position);
+						Transform.SetScale3D(Scale * FVector::One());
+
+						int32 InstanceIndex = InstancedStaticMeshComponent->AddInstance(Transform);
+
+						// Add colors to custom data.
+						// For each instance, custom data: [R, G, B, A]
+						if (!Primitive.Colors.IsEmpty())
+						{
+							Color = FLinearColor(Primitive.Colors[PointIndex]).ToFColor(true);
+
+							//// Colours are appearing too bright. Should they be squared, cubed?
+							//Color.R *= Color.R * Color.R;
+							//Color.G *= Color.G * Color.G;
+							//Color.B *= Color.B * Color.B;
+
+							TArray<float> ColorArray;
+							ColorArray.Init(0.0f, 4);
+							ColorArray[0] = Color.R;
+							ColorArray[1] = Color.G;
+							ColorArray[2] = Color.B;
+							ColorArray[3] = Color.A;
+
+							InstancedStaticMeshComponent->SetCustomData(InstanceIndex, ColorArray);
+						}
+
+						// NOTE FOR FUTURE PROGRAMMERS: If you want to make greater use of 
+						// static mesh instance custom data (for instance: radius, direction),
+						// you will need to adjust the material used by the base static mesh:
+						// glTFRuntime/M_GlypherBase_glTFRuntime
+					}
+					StaticMeshComponent = InstancedStaticMeshComponent;
+					
+					return StaticMesh;
+				}
+
+
 				UNiagaraSystem* NS = LoadObject<UNiagaraSystem>(nullptr, TEXT("/glTFRuntime/P_Point_glTFRuntime"), nullptr, LOAD_None, nullptr);
 
 				if (NS) 
 				{
-								
-					// In future, Glypher qualities will be sent via glTF.
-					// For now, just have that be set client side.
-					bool bGlyphers = true;
-					if (bGlyphers)
+					// Each element of Positions or Colors is one component of a Vector4.
+					// i.e. Positions[4*n]     = X,		Colours[4*n]     = B
+					//      Positions[4*n + 1] = Y,		Colours[4*n + 1] = G
+					//      Positions[4*n + 2] = Z,		Colours[4*n + 2] = R
+					//      Positions[4*n + 3] =  ,		Colours[4*n + 3] = A
+					TArray<float> Positions;
+					Positions.Init(0.0f, NumVertexInstancesPerSection * 4);
+					TArray<uint8_t> Colors;
+					Colors.Init(0, NumVertexInstancesPerSection * 4);
+
+					// Spawn particle for each point.
+					// NOTE: Glyphers are not yet supported.
+
+					// Collect points.
+					for (int32 PointIndex = 0; PointIndex < NumVertexInstancesPerSection; PointIndex++)
 					{
-						// Use instanced mesh for optimal rendering.
-						TArray<USceneComponent*> Parents;
-						StaticMeshComponent->GetParentComponents(Parents);
-						UInstancedStaticMeshComponent* InstancedStaticMeshComponent = NewObject<UInstancedStaticMeshComponent>(
-							Parents[0], MakeUniqueObjectName(StaticMeshComponent, UInstancedStaticMeshComponent::StaticClass(), "Glyphs"));
-						
+						int32 VertexIndexStart = Primitive.Indices[PointIndex];
 
-						
-						TArray<FVector> Positions;
-						Positions.Init(FVector::ZeroVector, NumVertexInstancesPerSection);
-						TArray<FLinearColor> Colors;
-						Colors.Init(FLinearColor::Green, NumVertexInstancesPerSection);
+						FVector Position = FVector(GetSafeValue(Primitive.Positions, VertexIndexStart, FVector::ZeroVector, bMissingIgnore));
+						FLinearColor Color;
+						// Lines and Points are not handled by UStaticMesh, therefore local2world transforms
+						// applied manually.
+						Position = MeshTransform.TransformPosition(Position);
 
-						// Collect points.
-						for (int32 PointIndex = 0; PointIndex < NumVertexInstancesPerSection; PointIndex++)
+						if (!Primitive.Colors.IsEmpty())
 						{
-							int32 VertexIndexStart = Primitive.Indices[PointIndex];
+							Color = FLinearColor(Primitive.Colors[PointIndex]).ToFColor(true);
 
-							FVector Position = FVector(GetSafeValue(Primitive.Positions, VertexIndexStart, FVector::ZeroVector, bMissingIgnore));
-							FLinearColor Color;
-							// Lines and Points are not handled by UStaticMesh, therefore local2world transforms
-							// applied manually.
-							//Positions[PointIndex] = MeshTransform.TransformPosition(Positions[PointIndex]);
-
-							if (!Primitive.Colors.IsEmpty())
-							{
-								Colors[PointIndex] = FLinearColor(Primitive.Colors[PointIndex]).ToFColor(true);
-
-								//// Colours are appearing too bright. Should they be squared, cubed?
-								//Colors[PointIndex].R *= Colors[PointIndex].R * Colors[PointIndex].R;
-								//Colors[PointIndex].G *= Colors[PointIndex].G * Colors[PointIndex].G;
-								//Colors[PointIndex].B *= Colors[PointIndex].B * Colors[PointIndex].B;
-							}
-
-							FTransform Transform = FTransform(Position);
-
-							InstancedStaticMeshComponent->AddInstance(Transform);
-
+							//// Colours are appearing too bright. Should they be squared, cubed?
+							//Colors[PointIndex].R *= Colors[PointIndex].R * Colors[PointIndex].R;
+							//Colors[PointIndex].G *= Colors[PointIndex].G * Colors[PointIndex].G;
+							//Colors[PointIndex].B *= Colors[PointIndex].B * Colors[PointIndex].B;
 						}
 
-						StaticMeshComponent = InstancedStaticMeshComponent;
+						Positions[4 * PointIndex] = Position.X;
+						Positions[4 * PointIndex + 1] = Position.Y;
+						Positions[4 * PointIndex + 2] = Position.Z;
 
-						// Assume glyphs are spheres
-						// Note this redefines StaticMesh, meaning StaticMeshContext needs to be suitably updated.
-						StaticMesh = LoadObject<UStaticMesh>(nullptr, TEXT("StaticMesh'/Engine/BasicShapes/Sphere.Sphere'"));
-						StaticMeshContext->StaticMesh = StaticMesh;
-						bFinalizeStaticMesh = false;
-						return StaticMesh;
+						Colors[4 * PointIndex] = Color.B * 255;
+						Colors[4 * PointIndex + 1] = Color.G * 255;
+						Colors[4 * PointIndex + 2] = Color.R * 255;
+						Colors[4 * PointIndex + 3] = Color.A * 255;
 					}
-					else
-					{
-						// Each element of Positions or Colors is one component of a Vector4.
-						// i.e. Positions[4*n]     = X,		Colours[4*n]     = B
-						//      Positions[4*n + 1] = Y,		Colours[4*n + 1] = G
-						//      Positions[4*n + 2] = Z,		Colours[4*n + 2] = R
-						//      Positions[4*n + 3] =  ,		Colours[4*n + 3] = A
-						TArray<float> Positions;
-						Positions.Init(0.0f, NumVertexInstancesPerSection * 4);
-						TArray<uint8_t> Colors;
-						Colors.Init(0, NumVertexInstancesPerSection * 4);
 
-						// Spawn particle for each point.
-						// NOTE: Glyphers are not yet supported.
+					UNiagaraComponent* PointCloud = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+						StaticMesh->GetWorld(), NS, FVector::Zero(), FRotator(0, 0, 0), FVector::One(), true, true, ENCPoolMethod::AutoRelease, true);
 
-						// Collect points.
-						for (int32 PointIndex = 0; PointIndex < NumVertexInstancesPerSection; PointIndex++)
-						{
-							int32 VertexIndexStart = Primitive.Indices[PointIndex];
+					InjectPointcloudData(PointCloud, Positions, Colors, NumVertexInstancesPerSection);
 
-							FVector Position = FVector(GetSafeValue(Primitive.Positions, VertexIndexStart, FVector::ZeroVector, bMissingIgnore));
-							FLinearColor Color;
-							// Lines and Points are not handled by UStaticMesh, therefore local2world transforms
-							// applied manually.
-							Position = MeshTransform.TransformPosition(Position);
-
-							if (!Primitive.Colors.IsEmpty())
-							{
-								Color = FLinearColor(Primitive.Colors[PointIndex]).ToFColor(true);
-
-								//// Colours are appearing too bright. Should they be squared, cubed?
-								//Colors[PointIndex].R *= Colors[PointIndex].R * Colors[PointIndex].R;
-								//Colors[PointIndex].G *= Colors[PointIndex].G * Colors[PointIndex].G;
-								//Colors[PointIndex].B *= Colors[PointIndex].B * Colors[PointIndex].B;
-							}
-
-							Positions[4 * PointIndex] = Position.X;
-							Positions[4 * PointIndex + 1] = Position.Y;
-							Positions[4 * PointIndex + 2] = Position.Z;
-
-							Colors[4 * PointIndex] = Color.B * 255;
-							Colors[4 * PointIndex + 1] = Color.G * 255;
-							Colors[4 * PointIndex + 2] = Color.R * 255;
-							Colors[4 * PointIndex + 3] = Color.A * 255;
-						}
-
-						UNiagaraComponent* PointCloud = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-							StaticMesh->GetWorld(), NS, FVector::Zero(), FRotator(0, 0, 0), FVector::One(), true, true, ENCPoolMethod::AutoRelease, true);
-
-						InjectPointcloudData(PointCloud, Positions, Colors, NumVertexInstancesPerSection);
-
-						return nullptr;
-					}
+					return nullptr;
 					
 				}
 				else 
