@@ -220,7 +220,7 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 						// applied manually.
 						PositionStart = MeshTransform.TransformPosition(PositionStart);
 						PositionEnd = MeshTransform.TransformPosition(PositionEnd);
-
+						 
 						FVector Diff = PositionEnd - PositionStart;
 						FVector UnitDiff = FVector(Diff);
 						UnitDiff.Normalize(0.00001f);
@@ -274,29 +274,31 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 				// For now, just have that be set client side.
 				bool bGlyphers = true;
 
+				// I'm getting crashes on my laptop due to large pointclouds with InstancedStaticMesh.
+				// Note that this hasn't happened with the particle system.
+				// Also note that the particle system isn't currently working due to a memory bug :(.
+				// Try particle system for large pointclouds
+				if (RESTRICT_POINTCLOUD_SIZE_FOR_TESTING_ON_LAPTOP && NumVertexInstancesPerSection > 1000)
+				{
+					UE_LOG(LogTemp, Log, TEXT("Large pointcloud (size %d) ignored due to small laptop."), NumVertexInstancesPerSection);
+					bGlyphers = false;
+					return nullptr;
+				}
+
 				// Glyphers use instanced rendering do render many objects.
 				if (bGlyphers)
 				{
-					// I'm getting crashes on my laptop due to large pointclouds with InstancedStaticMesh.
-					// Note that this hasn't happened with the particle system.
-					// Also note that the particle system isn't currently working due to a memory bug :(.
-					if (RESTRICT_POINTCLOUD_SIZE_FOR_TESTING_ON_LAPTOP && NumVertexInstancesPerSection > 1000)
-					{
-						UE_LOG(LogTemp, Log, TEXT("Large pointcloud (size %d) ignored due to small laptop."), NumVertexInstancesPerSection);
-						return nullptr;
-					}
-
-					// Assume glyphs are spheres
-					// Note this redefines StaticMesh, meaning StaticMeshContext needs to be suitably updated.
-					StaticMesh = LoadObject<UStaticMesh>(nullptr, GLYPHER_DEFAULT_MESH);
-					StaticMeshContext->StaticMesh = StaticMesh;
-					bFinalizeStaticMesh = false;
-
 					// Use instanced mesh for optimal rendering.
 					TArray<USceneComponent*> Parents;
 					StaticMeshComponent->GetParentComponents(Parents);
 					UInstancedStaticMeshComponent* InstancedStaticMeshComponent = NewObject<UInstancedStaticMeshComponent>(
 						Parents[0], MakeUniqueObjectName(StaticMeshComponent, UInstancedStaticMeshComponent::StaticClass(), "Glyphs"));
+
+					// Assume glyphs are spheres
+					// Note this redefines StaticMesh, meaning StaticMeshContext needs to be suitably updated.
+					StaticMesh = LoadObject<UStaticMesh>(Parents[0], GLYPHER_DEFAULT_MESH);
+					StaticMeshContext->StaticMesh = StaticMesh;
+					bFinalizeStaticMesh = false;
 
 					InstancedStaticMeshComponent->NumCustomDataFloats = NUM_CUSTOM_FLOATS_PER_INSTANCE;
 
@@ -313,10 +315,19 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 						FVector Position = FVector(GetSafeValue(Primitive.Positions, VertexIndexStart, FVector::ZeroVector, bMissingIgnore));
 						FLinearColor Color;
 
+						// MINOR ISSUE: Glyphs are not appearing as a subobject of the correct component.
+						// This isn't a big concern, but it means we may have to apply this transformation manually.
+						//Position = MeshTransform.TransformPosition(Position);
+
 						// The base static mesh is very large, therefore it must be scaled down.
+						// Currently, a copy of the default engine sphere is used (with custom material).
+						// Perhaps, in future, a specially designed mesh should be used instead.
 						float Scale = GLYPHER_SCALING_FACTOR;
 						FTransform Transform = FTransform(Position);
 						Transform.SetScale3D(Scale * FVector::One());
+
+						// In future, a rotation may be applied to Transform in order to render vector (arrow) glyphers.
+						// Something like, Transform.SetRotation(some rotation);
 
 						int32 InstanceIndex = InstancedStaticMeshComponent->AddInstance(Transform);
 
@@ -342,7 +353,7 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 						}
 
 						// NOTE FOR FUTURE PROGRAMMERS: If you want to make greater use of 
-						// static mesh instance custom data (for instance: radius, direction),
+						// static mesh instance custom data (for instance: radius),
 						// you will need to adjust the material used by the base static mesh:
 						// glTFRuntime/M_GlypherBase_glTFRuntime
 					}
@@ -401,7 +412,7 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 					}
 
 					UNiagaraComponent* PointCloud = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-						StaticMesh->GetWorld(), NS, FVector::Zero(), FRotator(0, 0, 0), FVector::One(), true, true, ENCPoolMethod::AutoRelease, true);
+						StaticMeshComponent->GetWorld(), NS, FVector::Zero(), FRotator(0, 0, 0), FVector::One(), true, true, ENCPoolMethod::AutoRelease, true);
 
 					InjectPointcloudData(PointCloud, Positions, Colors, NumVertexInstancesPerSection);
 
@@ -858,20 +869,30 @@ void FglTFRuntimeParser::InjectPointcloudData(UNiagaraComponent* PointCloud, TAr
 	PointCloud->SetVariableInt("User.TextureWidth", TextureWidth);
 	PointCloud->SetVariableInt("User.TextureHeight", TextureHeight);
 
-	PositionData = new uint8[4 * PointCount * sizeof(float)];
-	ColorData = new uint8[4 * PointCount * sizeof(uint8_t)];
-	PositionData = (uint8*)Positions.GetData();
-	ColorData = (uint8*)Colors.GetData();
+
+	UE_LOG(LogTemp, Log, TEXT("PositionData nominal size: %d"), 4 * PointCount * sizeof(float));
+	UE_LOG(LogTemp, Log, TEXT("ColorData nominal size: %d"), 4 * PointCount * sizeof(uint8_t));
+
+	uint8* TexturePositionData = new uint8[4 * PointCount * sizeof(float)];
+	uint8* TextureColorData = new uint8[4 * PointCount * sizeof(uint8_t)];
+
+	TexturePositionData = (uint8*)Positions.GetData();
+	TextureColorData = (uint8*)Colors.GetData();
+
+	UE_LOG(LogTemp, Log, TEXT("PositionData size: %d"), sizeof(TexturePositionData));
+	UE_LOG(LogTemp, Log, TEXT("ColorData size: %d"), sizeof(TextureColorData));
+
+	UE_LOG(LogTemp, Log, TEXT("PositionData pointing to size: %d"), sizeof(*TexturePositionData));
+	UE_LOG(LogTemp, Log, TEXT("ColorData pointing to size: %d"), sizeof(*TextureColorData));
 
 	// Bring the data into the texture
 	uint32 PositionPixelWidth = 4 * sizeof(float);
 	uint32 PositionPitch = TextureWidth * PositionPixelWidth;
-
-	UE_LOG(LogTemp, Log, TEXT("Position Pitch: %d"), PositionPitch);
-	UE_LOG(LogTemp, Log, TEXT("Position Pixel: %d"), PositionPixelWidth);
 	
 	PositionTexture->UpdateTextureRegions(0, 1, &Region, PositionPitch, PositionPixelWidth,
-		PositionData);
+		TexturePositionData);
+
+	delete [] TexturePositionData;
 
 	uint32 ColorPixelWidth = 4 * sizeof(uint8_t);
 	uint32 ColorPitch = TextureWidth * ColorPixelWidth;
@@ -879,7 +900,9 @@ void FglTFRuntimeParser::InjectPointcloudData(UNiagaraComponent* PointCloud, TAr
 	UE_LOG(LogTemp, Log, TEXT("Color Pitch: %d"), ColorPitch);
 	UE_LOG(LogTemp, Log, TEXT("Color Pixel: %d"), ColorPixelWidth);
 
-	ColorTexture->UpdateTextureRegions(0, 1, &Region, ColorPitch, ColorPixelWidth, ColorData);
+	ColorTexture->UpdateTextureRegions(0, 1, &Region, ColorPitch, ColorPixelWidth, TextureColorData);
+
+	delete [] TextureColorData;
 }
 
 
