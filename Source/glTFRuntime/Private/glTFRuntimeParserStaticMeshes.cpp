@@ -280,9 +280,9 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMesh_Internal(TSharedRef<FglTFRuntime
 				// Try particle system for large pointclouds
 				if (RESTRICT_POINTCLOUD_SIZE_FOR_TESTING_ON_LAPTOP && NumVertexInstancesPerSection > 1000)
 				{
-					UE_LOG(LogTemp, Log, TEXT("Large pointcloud (size %d) ignored due to small laptop."), NumVertexInstancesPerSection);
+					UE_LOG(LogTemp, Log, TEXT("Large pointcloud (size %d) ignored due to computer constraints."), NumVertexInstancesPerSection);
 					bGlyphers = false;
-					return nullptr;
+					return nullptr; // Comment this line out to try rendering particles.
 				}
 
 				// Glyphers use instanced rendering do render many objects.
@@ -888,6 +888,10 @@ void FglTFRuntimeParser::InjectPointcloudData(UNiagaraComponent* PointCloud, TAr
 	// Bring the data into the texture
 	uint32 PositionPixelWidth = 4 * sizeof(float);
 	uint32 PositionPitch = TextureWidth * PositionPixelWidth;
+
+
+	UE_LOG(LogTemp, Log, TEXT("Color Pitch: %d"), PositionPitch);
+	UE_LOG(LogTemp, Log, TEXT("Color Pixel: %d"), PositionPixelWidth);
 	
 	PositionTexture->UpdateTextureRegions(0, 1, &Region, PositionPitch, PositionPixelWidth,
 		TexturePositionData);

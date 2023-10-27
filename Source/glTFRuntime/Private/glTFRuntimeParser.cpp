@@ -3068,7 +3068,7 @@ bool FglTFRuntimeParser::GetBuffer(const int32 Index, FglTFRuntimeBlob& Blob)
 			return true;
 		}
 		UE_LOG(LogTemp, Log,
-			TEXT("Uri not found in AuxilliaryData."));
+			TEXT("Uri \"%s\" not found in AuxilliaryData."), *Uri);
 	}
 
 	if (ZipFile)
